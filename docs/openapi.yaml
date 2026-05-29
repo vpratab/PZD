@@ -160,7 +160,9 @@ components:
         upstream_model_endpoint:
           type: string
           description: The downstream foundation-model endpoint the Gateway proxies to.
-        timestamp: { type: number }
+        timestamp:
+          type: integer
+          description: Integer Unix seconds. Kept integral for cross-language proof canonicalization.
 
     InferenceRequest:
       type: object
@@ -235,7 +237,9 @@ components:
         counter:
           type: integer
           description: Monotonic counter — anti-rollback.
-        timestamp: { type: number }
+        timestamp:
+          type: integer
+          description: Integer Unix seconds. Kept integral for cross-language proof canonicalization.
         commitment_hex: { type: string }
         processor_id: { type: string }
         upstream_model: { type: string }

@@ -98,7 +98,7 @@ async fn dispatch(env: &VsockEnvelope, state: &EnclaveState) -> VsockResponse {
                 Err(e) => json_resp(500, &json!({"ok": false, "error": format!("{e:?}")})),
             }
         }
-        ("GET", "/v1/ledger/root") => json_resp(200, &state.ledger_root()),
+        ("GET", "/v1/ledger/root") => json_resp(200, &state.ledger_root().await),
         _ => json_resp(
             404,
             &json!({"error": "not found", "method": env.method, "path": env.path}),
@@ -174,7 +174,7 @@ impl EnclaveState {
             proof_verifier_key_hex: hex::encode(self.proof_sk.verifying_key().to_bytes()),
             tee_backend: "aws-nitro".into(),
             compute_tier: "tier1_cpu_enclave_only".into(),
-            timestamp: now_secs() as f64,
+            timestamp: now_secs(),
         })
     }
 
@@ -266,7 +266,7 @@ impl EnclaveState {
             session_id: random_hex(16),
             tenant_id: tenant.into(),
             counter,
-            timestamp: now_secs() as f64,
+            timestamp: now_secs(),
             commitment_hex: req.commitment_hex.clone(),
             processor_id: "gateway".into(),
             upstream_model: upstream_resp
@@ -325,7 +325,7 @@ impl EnclaveState {
             session_id: random_hex(16),
             tenant_id: tenant.into(),
             counter,
-            timestamp: now_secs() as f64,
+            timestamp: now_secs(),
             commitment_hex: commitment.into(),
             processor_id: "gateway".into(),
             upstream_model: None,
@@ -360,10 +360,12 @@ impl EnclaveState {
         }))
     }
 
-    fn ledger_root(&self) -> Value {
-        // Cannot await inside sync fn; return a stale snapshot is fine for /root probe.
-        // Production uses a separate read-only mirror.
-        json!({"hint": "use the receipt.root_hex returned with each proof"})
+    async fn ledger_root(&self) -> Value {
+        let ledger = self.ledger.lock().await;
+        json!({
+            "size": ledger.len(),
+            "root_hex": hex::encode(ledger.root()),
+        })
     }
 }
 
@@ -391,6 +393,9 @@ impl MerkleLog {
             "root_hex": hex::encode(root),
             "ledger_size": self.entries.len(),
         }))
+    }
+    fn len(&self) -> usize {
+        self.entries.len()
     }
     fn push_tower(&mut self, leaf: Vec<u8>) {
         let mut node = leaf;
@@ -483,7 +488,7 @@ struct AttestationOut {
     proof_verifier_key_hex: String,
     tee_backend: String,
     compute_tier: String,
-    timestamp: f64,
+    timestamp: u64,
 }
 
 #[derive(Serialize)]
@@ -494,7 +499,7 @@ struct ProofStatement {
     session_id: String,
     tenant_id: String,
     counter: u64,
-    timestamp: f64,
+    timestamp: u64,
     commitment_hex: String,
     processor_id: String,
     upstream_model: Option<String>,
@@ -570,4 +575,43 @@ async fn write_framed(s: &mut VsockStream, bytes: &[u8]) -> Result<()> {
     s.write_all(&(bytes.len() as u32).to_be_bytes()).await?;
     s.write_all(bytes).await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn proof_timestamp_serializes_as_integer_for_cross_language_verification() {
+        let stmt = ProofStatement {
+            proof_id: "proof".into(),
+            proof_version: 3,
+            schema_url: "pzdr://proof/v3".into(),
+            session_id: "session".into(),
+            tenant_id: "tenant".into(),
+            counter: 1,
+            timestamp: 1_779_984_000,
+            commitment_hex: "aa".into(),
+            processor_id: "gateway".into(),
+            upstream_model: None,
+            upstream_tokens_in: None,
+            upstream_tokens_out: None,
+            measurement: "00".into(),
+            channel_public_key_hex: "11".into(),
+            tee_backend: "aws-nitro".into(),
+            compute_tier: "tier1_cpu_enclave_only".into(),
+            proof_mode: "attestation".into(),
+            success: true,
+            error_code: None,
+            policy_decision: json!({"allow": true}),
+            zeroization_report: json!({}),
+            result_hash_hex: None,
+            output_governance: json!({}),
+            failure_detail: None,
+        };
+
+        let canonical = String::from_utf8(canonical_json(&stmt).unwrap()).unwrap();
+        assert!(canonical.contains("\"timestamp\":1779984000"));
+        assert!(!canonical.contains("1779984000.0"));
+    }
 }

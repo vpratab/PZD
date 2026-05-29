@@ -260,13 +260,94 @@ impl Verifier {
             .map_err(|e| NitroError::CertChain(format!("root pem: {e:?}")))?;
         let _root = x509_cert::Certificate::from_der(&root_der)
             .map_err(|e| NitroError::CertChain(format!("root: {e:?}")))?;
-        // Full path-building + signature validation across the chain. For
-        // production we hand off to webpki or rustls-pki-types; here we ensure
-        // every cert parses, every issuer ↔ subject matches, and notBefore/notAfter
-        // bracket "now". This is the minimum AWS docs require for Nitro chain
-        // validation; the cose signature check below confirms cryptographic integrity.
-        // TODO(week-2): swap to webpki::EndEntityCert::verify_is_valid_tls_server_cert
-        // with the AWS Nitro Trust Anchor list.
+        let mut chain = Vec::with_capacity(intermediates.len() + 1);
+        chain.push(_leaf);
+        for der in intermediates {
+            chain.push(
+                x509_cert::Certificate::from_der(der)
+                    .map_err(|e| NitroError::CertChain(format!("intermediate: {e:?}")))?,
+            );
+        }
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| NitroError::CertChain("system clock before unix epoch".into()))?
+            .as_secs();
+        for (idx, cert) in chain.iter().enumerate() {
+            Self::verify_cert_validity(cert, now, &format!("chain cert {idx}"))?;
+            let issuer = chain.get(idx + 1).unwrap_or(&_root);
+            if cert.tbs_certificate.issuer != issuer.tbs_certificate.subject {
+                return Err(NitroError::CertChain(format!(
+                    "issuer/subject mismatch at chain index {idx}: issuer={} subject={}",
+                    cert.tbs_certificate.issuer, issuer.tbs_certificate.subject
+                )));
+            }
+            Self::verify_cert_signature(cert, issuer, &format!("chain cert {idx}"))?;
+        }
+        Self::verify_cert_validity(&_root, now, "pinned AWS root")?;
+        // Validate the supplied Nitro chain against our pinned AWS root: every
+        // certificate must be time-valid, issuer/subject-linked, and signed by
+        // the next issuer in the path. This is intentionally narrower than a
+        // general WebPKI path builder because Nitro documents carry their own
+        // AWS-rooted certificate bundle.
+        Ok(())
+    }
+
+    fn verify_cert_validity(
+        cert: &x509_cert::Certificate,
+        now_unix_secs: u64,
+        label: &str,
+    ) -> Result<(), NitroError> {
+        let not_before = cert
+            .tbs_certificate
+            .validity
+            .not_before
+            .to_unix_duration()
+            .as_secs();
+        let not_after = cert
+            .tbs_certificate
+            .validity
+            .not_after
+            .to_unix_duration()
+            .as_secs();
+
+        if now_unix_secs < not_before || now_unix_secs > not_after {
+            return Err(NitroError::CertChain(format!(
+                "{label} not valid at current time"
+            )));
+        }
+        Ok(())
+    }
+
+    fn verify_cert_signature(
+        cert: &x509_cert::Certificate,
+        issuer: &x509_cert::Certificate,
+        label: &str,
+    ) -> Result<(), NitroError> {
+        use p384::ecdsa::{signature::Verifier as _, Signature, VerifyingKey};
+        use x509_cert::der::Encode;
+
+        let issuer_spki = issuer
+            .tbs_certificate
+            .subject_public_key_info
+            .subject_public_key
+            .raw_bytes();
+        let verifying_key = VerifyingKey::from_sec1_bytes(issuer_spki)
+            .map_err(|e| NitroError::CertChain(format!("{label} issuer SPKI not P-384: {e:?}")))?;
+        let tbs_der = cert
+            .tbs_certificate
+            .to_der()
+            .map_err(|e| NitroError::CertChain(format!("{label} tbs der: {e:?}")))?;
+        let signature_bytes = cert
+            .signature
+            .as_bytes()
+            .ok_or_else(|| NitroError::CertChain(format!("{label} signature has unused bits")))?;
+        let signature = Signature::from_der(signature_bytes)
+            .map_err(|e| NitroError::CertChain(format!("{label} signature der: {e:?}")))?;
+
+        verifying_key
+            .verify(&tbs_der, &signature)
+            .map_err(|_| NitroError::CertChain(format!("{label} signature verification failed")))?;
         Ok(())
     }
 

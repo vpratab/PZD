@@ -7,6 +7,9 @@
  */
 
 import sodium from "libsodium-wrappers";
+import { canonicalJSON } from "./canonical.js";
+
+export { canonicalJSON } from "./canonical.js";
 
 export interface AttestationDocument {
   nitro_attestation_b64: string;
@@ -25,6 +28,7 @@ export interface DeletionProofStatement {
   session_id: string;
   tenant_id?: string;
   counter: number;
+  /** Integer Unix seconds. Kept integral so Rust-signed proofs verify in JS. */
   timestamp: number;
   commitment_hex: string;
   processor_id?: string;
@@ -233,16 +237,4 @@ function b64ToBytes(value: string): Uint8Array {
     bytes[i] = binary.charCodeAt(i);
   }
   return bytes;
-}
-
-export function canonicalJSON(value: unknown): string {
-  if (value === null || typeof value !== "object") {
-    return JSON.stringify(value);
-  }
-  if (Array.isArray(value)) {
-    return `[${value.map(canonicalJSON).join(",")}]`;
-  }
-  const record = value as Record<string, unknown>;
-  const keys = Object.keys(record).sort();
-  return `{${keys.map((key) => `${JSON.stringify(key)}:${canonicalJSON(record[key])}`).join(",")}}`;
 }

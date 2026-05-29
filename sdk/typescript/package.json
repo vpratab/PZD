@@ -10,7 +10,7 @@
   "files": ["dist"],
   "scripts": {
     "build": "tsc",
-    "test": "jest --passWithNoTests",
+    "test": "node --test client.test.mjs",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
