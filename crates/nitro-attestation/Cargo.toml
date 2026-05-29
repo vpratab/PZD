@@ -1,0 +1,37 @@
+[package]
+name = "nitro-attestation"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "AWS Nitro Enclave attestation document parsing + verification (COSE/CBOR over the NSM device)"
+
+[features]
+default = []
+# Enabled inside the enclave; pulls in the AWS NSM device interface.
+inside-enclave = ["aws-nitro-enclaves-nsm-api"]
+
+[dependencies]
+# COSE_Sign1 parsing + ECDSA-P384 verification of the AWS root signature
+serde = { version = "1", features = ["derive"] }
+serde_bytes = "0.11"
+serde_cbor = "0.11"
+ciborium = "0.2"
+coset = "0.3"
+# AWS root certificate chain validation
+x509-cert = { version = "0.2", features = ["pem"] }
+der = "0.7"
+spki = "0.7"
+# Hash + signature primitives
+sha2 = "0.10"
+p384 = { version = "0.13", features = ["ecdsa"] }
+# Errors
+thiserror = "1"
+hex = "0.4"
+chrono = { version = "0.4", features = ["serde"] }
+base64 = "0.22"
+
+# Only available inside a Nitro Enclave; gated by feature flag.
+aws-nitro-enclaves-nsm-api = { version = "0.4", optional = true }
+
+[dev-dependencies]
+hex-literal = "0.4"

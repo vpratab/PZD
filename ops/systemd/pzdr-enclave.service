@@ -1,0 +1,15 @@
+[Unit]
+Description=PZDR Nitro Enclave
+After=docker.service nitro-enclaves-allocator.service
+Requires=docker.service nitro-enclaves-allocator.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+EnvironmentFile=/etc/pzdr/pzdr.env
+ExecStart=/usr/bin/nitro-cli run-enclave --eif-path ${PZDR_EIF_PATH} --memory ${PZDR_ENCLAVE_MEMORY_MIB} --cpu-count ${PZDR_ENCLAVE_CPU_COUNT} --enclave-cid ${ENCLAVE_CID}
+ExecStartPost=/usr/bin/nitro-cli describe-enclaves
+ExecStop=/usr/local/bin/pzdr-terminate-enclave
+
+[Install]
+WantedBy=multi-user.target

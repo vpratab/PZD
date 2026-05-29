@@ -1,0 +1,21 @@
+[Unit]
+Description=PZDR parent HTTP to vsock proxy
+After=network-online.target pzdr-enclave.service
+Wants=network-online.target
+Requires=pzdr-enclave.service
+
+[Service]
+Type=simple
+User=pzdr
+Group=pzdr
+EnvironmentFile=/etc/pzdr/pzdr.env
+ExecStart=/usr/local/bin/vsock-parent-proxy
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

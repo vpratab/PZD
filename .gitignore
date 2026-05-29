@@ -1,0 +1,17 @@
+target/
+node_modules/
+dist/
+data/
+evidence/
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+*.log
+*.eif
+*.eif.sig
+.env
+.env.local
+__pycache__/
+*.pyc
+build/

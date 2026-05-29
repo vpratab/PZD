@@ -1,0 +1,26 @@
+# Docker image that becomes the Nitro Enclave EIF.
+#
+# The parent proxy image is built by ../Dockerfile. This image contains only the
+# enclave binary and minimal runtime dependencies.
+
+FROM rust:1-bookworm AS builder
+WORKDIR /build
+
+COPY Cargo.toml Cargo.lock ./
+COPY crates ./crates
+COPY services ./services
+
+ARG PZDR_EXPECTED_PCR0
+ENV PZDR_EXPECTED_PCR0=${PZDR_EXPECTED_PCR0}
+
+RUN cargo build --release -p pzdr-enclave
+
+FROM debian:bookworm-slim AS runtime
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /build/target/release/pzdr-enclave /usr/local/bin/pzdr-enclave
+
+ENV RUST_LOG=info,pzdr_enclave=debug
+ENTRYPOINT ["/usr/local/bin/pzdr-enclave"]

@@ -1,0 +1,272 @@
+openapi: 3.0.3
+info:
+  title: PZDR Gateway API
+  description: |
+    Provable Zero Data Retention Gateway. A proxy between client and a foundation-model
+    API that processes requests inside an attested ephemeral compute boundary and returns
+    the model response together with a cryptographically signed deletion receipt anchored
+    on an append-only Merkle ledger.
+  version: 0.1.0
+  contact:
+    name: AssureZero LLC
+    email: support@assurezero.com
+    url: https://assurezero.com
+  license:
+    name: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+servers:
+  - url: https://gateway.pzdr.assurezero.com
+    description: Production
+  - url: http://127.0.0.1:8090
+    description: Local development
+
+security:
+  - apiKey: []
+
+paths:
+  /health:
+    get:
+      summary: Liveness probe
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  ledger_size: { type: integer }
+                  counter: { type: integer }
+
+  /v1/attestation:
+    get:
+      summary: Fetch the enclave attestation document
+      description: |
+        Returns the enclave's published code measurement, channel public key, and
+        proof verifier key. Clients use this to (a) bind their encrypted payload
+        to the enclave's attested channel and (b) verify signed proofs offline.
+      security: []
+      responses:
+        '200':
+          description: Attestation document
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttestationDocument'
+
+  /v1/gateway/inference:
+    post:
+      summary: Submit an inference request through the Gateway
+      description: |
+        Decrypt inside enclave → verify commitment → evaluate policy → call upstream
+        model → wipe plaintext → sign v3 deletion proof → append to Merkle ledger →
+        return model response + signed proof + ledger receipt.
+
+        On any failure path the Gateway still returns a signed Failure Proof so
+        the audit chain remains complete.
+      parameters:
+        - in: header
+          name: X-Tenant-Id
+          required: false
+          schema: { type: string }
+          description: Tenant identifier used for policy scoping and proof binding.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InferenceRequest'
+      responses:
+        '200':
+          description: Inference succeeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InferenceResponse'
+        '400':
+          description: Malformed request
+
+  /v1/ledger/root:
+    get:
+      summary: Get the current Merkle ledger root
+      description: |
+        Returns the size of the ledger and its current root hash. Use this as a
+        consistency check anchor — for full audit, also call /v1/ledger/proof/{idx}.
+      responses:
+        '200':
+          description: Current ledger root
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  size: { type: integer }
+                  root_hex: { type: string }
+
+  /v1/ledger/proof/{idx}:
+    get:
+      summary: Get a Merkle inclusion proof for an entry
+      parameters:
+        - in: path
+          name: idx
+          required: true
+          schema: { type: integer, minimum: 0 }
+      responses:
+        '200':
+          description: Inclusion proof
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  index: { type: integer }
+                  leaf_hex: { type: string }
+                  path: { type: array, items: { type: string } }
+                  root_hex: { type: string }
+
+components:
+  securitySchemes:
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-PZDR-Api-Key
+
+  schemas:
+    AttestationDocument:
+      type: object
+      required: [nitro_attestation_b64, measurement, channel_public_key_hex, proof_verifier_key_hex, tee_backend]
+      properties:
+        nitro_attestation_b64:
+          type: string
+          description: Raw AWS Nitro attestation document, base64-encoded.
+        measurement:
+          type: string
+          description: Enclave code identity. Hex-encoded SHA-256 of the canonical enclave image.
+        channel_public_key_hex:
+          type: string
+          description: X25519 public key the client must encrypt to. Hex-encoded.
+        proof_verifier_key_hex:
+          type: string
+          description: Ed25519 verifier key for signed proofs. Hex-encoded.
+        tee_backend:
+          type: string
+          enum: [aws-nitro, amd-sev-snp, intel-tdx, mock_nitro_python]
+        compute_tier:
+          type: string
+          enum: [tier1_cpu_enclave_only, tier1_cpu_enclave_gpu_cc, tier3_hybrid_split_trust]
+        upstream_model_endpoint:
+          type: string
+          description: The downstream foundation-model endpoint the Gateway proxies to.
+        timestamp: { type: number }
+
+    InferenceRequest:
+      type: object
+      required: [client_pub_hex, ciphertext_hex, nonce_hex, commitment_hex, commitment_salt_hex, commitment_context]
+      properties:
+        client_pub_hex:
+          type: string
+          description: Client's ephemeral X25519 public key for this request.
+        ciphertext_hex:
+          type: string
+          description: XChaCha20-Poly1305 ciphertext of the prompt, keyed via X25519 + HKDF.
+        nonce_hex:
+          type: string
+          description: 24-byte XChaCha20-Poly1305 nonce.
+        commitment_hex:
+          type: string
+          description: SHA-256 commitment of the plaintext (artifact || salt || context).
+        commitment_salt_hex:
+          type: string
+          description: 16-byte salt used in the commitment.
+        commitment_context:
+          type: string
+          description: Application-defined context string bound into the commitment.
+        processor_id:
+          type: string
+          description: Upstream processor identifier (e.g. "gateway", "patient_aggregate").
+
+    InferenceResponse:
+      type: object
+      required: [ok, proof, receipt, timings_us]
+      properties:
+        ok: { type: boolean }
+        model_response:
+          type: object
+          description: The upstream model's response (passthrough).
+        error:
+          type: string
+          description: Error code if ok = false. Still produces a signed failure proof.
+        proof:
+          $ref: '#/components/schemas/SignedDeletionProof'
+        receipt:
+          type: object
+          properties:
+            index: { type: integer }
+            leaf_hex: { type: string }
+            root_hex: { type: string }
+            ledger_size: { type: integer }
+        timings_us:
+          type: object
+          additionalProperties: { type: integer }
+
+    SignedDeletionProof:
+      type: object
+      required: [statement, signature_b64]
+      properties:
+        statement:
+          $ref: '#/components/schemas/DeletionProofStatement'
+        signer_key_id: { type: string }
+        signature_b64:
+          type: string
+          description: Ed25519 signature over canonical JSON of statement.
+
+    DeletionProofStatement:
+      type: object
+      required: [proof_id, proof_version, session_id, counter, timestamp, commitment_hex, measurement, success]
+      properties:
+        proof_id: { type: string }
+        proof_version: { type: integer, enum: [3] }
+        schema_url: { type: string }
+        session_id: { type: string }
+        tenant_id: { type: string }
+        counter:
+          type: integer
+          description: Monotonic counter — anti-rollback.
+        timestamp: { type: number }
+        commitment_hex: { type: string }
+        processor_id: { type: string }
+        upstream_model: { type: string }
+        upstream_tokens_in: { type: integer }
+        upstream_tokens_out: { type: integer }
+        measurement: { type: string }
+        channel_public_key_b64: { type: string }
+        tee_backend: { type: string }
+        compute_tier: { type: string }
+        proof_mode:
+          type: string
+          enum: [attestation, zk]
+        success: { type: boolean }
+        error_code: { type: string }
+        policy_decision:
+          type: object
+          properties:
+            allow: { type: boolean }
+            policy_hash: { type: string }
+            reason: { type: string }
+            tenant: { type: string }
+        zeroization_report:
+          type: object
+          properties:
+            input_buffer_wiped: { type: boolean }
+            response_buffer_wiped: { type: boolean }
+        result_hash_hex: { type: string }
+        output_governance:
+          type: object
+          properties:
+            retention_policy:
+              type: string
+              enum: [ephemeral, retained-encrypted, returned-only]
+            expires_at: { type: number }

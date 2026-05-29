@@ -1,0 +1,20 @@
+# Local syntax/build harness for the parent proxy image.
+#
+# Full end-to-end inference requires a Nitro Enclave running on EC2. On a local
+# workstation this container can only prove that the parent proxy starts and
+# serves /health.
+
+services:
+  proxy:
+    build:
+      context: .
+      target: runtime
+    environment:
+      PROXY_ADDR: 0.0.0.0:8090
+      ENCLAVE_CID: 16
+      ENCLAVE_PORT: 5000
+      ENCLAVE_TIMEOUT_MS: 30000
+      RUST_LOG: info
+    ports:
+      - "8090:8090"
+    restart: unless-stopped

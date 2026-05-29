@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cid="${ENCLAVE_CID:-16}"
+ids="$(nitro-cli describe-enclaves | jq -r --argjson cid "$cid" '.[] | select(.EnclaveCID == $cid) | .EnclaveID')"
+
+if [ -z "$ids" ]; then
+  echo "No PZDR enclave found for CID $cid"
+  exit 0
+fi
+
+while IFS= read -r id; do
+  [ -z "$id" ] && continue
+  nitro-cli terminate-enclave --enclave-id "$id"
+done <<< "$ids"

@@ -1,0 +1,20 @@
+region = "us-east-1"
+
+vpc_id             = "vpc-xxxxxxxx"
+public_subnet_ids  = ["subnet-public-a", "subnet-public-b"]
+private_subnet_ids = ["subnet-private-a", "subnet-private-b"]
+
+domain_name     = "gateway.example.com"
+certificate_arn = "arn:aws:acm:us-east-1:111122223333:certificate/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+
+pzdr_measurement = "replace-with-final-pcr0-imagesha384"
+
+allowed_ingress_cidrs = ["0.0.0.0/0"]
+instance_type          = "c5.xlarge"
+enclave_cpu_count      = 2
+enclave_memory_mib     = 2048
+
+tags = {
+  Project = "PZDR"
+  Env     = "pilot"
+}

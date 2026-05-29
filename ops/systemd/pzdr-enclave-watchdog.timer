@@ -1,0 +1,10 @@
+[Unit]
+Description=PZDR enclave health watchdog timer
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=15s
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target
