@@ -25,7 +25,28 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo check --workspace
       - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo test -p marketplace-metering
+      - run: cargo test --workspace
+
+  shell:
+    name: Shell Scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - run: |
+          shellcheck -x \
+            eif/build-eif.sh \
+            scripts/*.sh \
+            scripts/pzdr-terminate-enclave \
+            scripts/pzdr-enclave-watchdog \
+            aws/terraform/userdata.sh \
+            -e SC2154
+          bash -n \
+            eif/build-eif.sh \
+            scripts/*.sh \
+            scripts/pzdr-terminate-enclave \
+            scripts/pzdr-enclave-watchdog \
+            aws/terraform/userdata.sh
 
   typescript-sdk:
     name: TypeScript SDK
@@ -61,6 +82,17 @@ jobs:
           base = pathlib.Path(".")
           yaml.safe_load((base / "docs/openapi.yaml").read_text(encoding="utf-8"))
           yaml.safe_load((base / "docker-compose.yml").read_text(encoding="utf-8"))
+          yaml.safe_load((base / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
           json.loads((base / "sdk/typescript/package.json").read_text(encoding="utf-8"))
           print("docs ok")
           PY
+
+  terraform:
+    name: Terraform
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - run: terraform -chdir=aws/terraform init -backend=false
+      - run: terraform -chdir=aws/terraform fmt -check -diff
+      - run: terraform -chdir=aws/terraform validate

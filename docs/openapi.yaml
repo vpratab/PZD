@@ -242,7 +242,7 @@ components:
         upstream_tokens_in: { type: integer }
         upstream_tokens_out: { type: integer }
         measurement: { type: string }
-        channel_public_key_b64: { type: string }
+        channel_public_key_hex: { type: string }
         tee_backend: { type: string }
         compute_tier: { type: string }
         proof_mode:

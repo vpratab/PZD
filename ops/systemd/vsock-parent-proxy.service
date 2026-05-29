@@ -5,13 +5,15 @@ Wants=network-online.target
 Requires=pzdr-enclave.service
 
 [Service]
-Type=simple
+Type=notify
+NotifyAccess=main
 User=pzdr
 Group=pzdr
 EnvironmentFile=/etc/pzdr/pzdr.env
 ExecStart=/usr/local/bin/vsock-parent-proxy
 Restart=always
 RestartSec=5
+WatchdogSec=30
 NoNewPrivileges=true
 ProtectSystem=full
 ProtectHome=true

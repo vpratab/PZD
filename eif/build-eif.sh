@@ -26,7 +26,8 @@ echo "==> pass 1: provisional EIF"
 PROV_EIF="$OUT/pzdr-enclave-${PZDR_VERSION}-prov.eif"
 sudo nitro-cli build-enclave \
   --docker-uri "${IMAGE_TAG}-prov" \
-  --output-file "$PROV_EIF" | sudo tee "$OUT/prov-output.json" >/dev/null
+  --output-file "$PROV_EIF" \
+  | sudo tee "$OUT/prov-output.json" >/dev/null
 
 REAL_PCR0="$(jq -r .Measurements.PCR0 "$OUT/prov-output.json")"
 echo "real PCR0: $REAL_PCR0"
@@ -41,7 +42,8 @@ docker build --target runtime \
 echo "==> pass 2: final EIF"
 sudo nitro-cli build-enclave \
   --docker-uri "${IMAGE_TAG}" \
-  --output-file "$EIF_PATH" | sudo tee "$OUT/output.json" >/dev/null
+  --output-file "$EIF_PATH" \
+  | sudo tee "$OUT/output.json" >/dev/null
 
 jq .Measurements "$OUT/output.json" > "$MEAS_PATH"
 jq . "$MEAS_PATH"

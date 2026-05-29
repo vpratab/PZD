@@ -5,14 +5,4 @@ After=pzdr-enclave.service
 [Service]
 Type=oneshot
 EnvironmentFile=/etc/pzdr/pzdr.env
-# If the enclave with our pinned CID is not in RUNNING state, bounce the
-# pzdr-enclave.service unit. This catches the case where nitro-cli's launch
-# returned success but the enclave subsequently crashed inside the VM.
-ExecStart=/bin/bash -c '\
-  set -euo pipefail; \
-  state=$(nitro-cli describe-enclaves | jq -r --argjson cid "$${ENCLAVE_CID:-16}" \
-    "(map(select(.EnclaveCID == \$cid)) | .[0].State) // \"MISSING\""); \
-  if [ "$state" != "RUNNING" ]; then \
-    echo "enclave state=$state for CID $${ENCLAVE_CID:-16}; restarting" >&2; \
-    systemctl restart pzdr-enclave.service; \
-  fi'
+ExecStart=/usr/local/bin/pzdr-enclave-watchdog

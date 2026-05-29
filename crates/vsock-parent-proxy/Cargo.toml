@@ -27,3 +27,4 @@ clap = { version = "4", features = ["derive", "env"] }
 bytes = "1"
 prometheus = "0.13"
 base64 = "0.22"
+sd-notify = "0.5"

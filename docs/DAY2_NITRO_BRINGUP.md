@@ -54,17 +54,23 @@ sudo install -m 0644 out/pzdr-enclave-v0.1.0.eif /opt/pzdr/eif/pzdr-enclave-v0.1
 ```
 
 Update `/etc/pzdr/pzdr.env` with the real path, CID, CPU count, and memory.
-
-## Pin PCR0 Before Starting
-
-The canary refuses to send traffic if the running enclave's PCR0 does not match
-the value pinned in the environment. Read the measurement that `build-eif.sh`
-emitted and set it in `/etc/pzdr/pzdr.env`:
+Also pin the PCR0 expected by the canary:
 
 ```bash
 PCR0=$(jq -r .PCR0 eif/out/pzdr-enclave-v0.1.0.measurements.json)
-sudo sed -i "s|^PZDR_EXPECTED_PCR0=.*|PZDR_EXPECTED_PCR0=$PCR0|" /etc/pzdr/pzdr.env
+sudo sed -i "s/^PZDR_EXPECTED_PCR0=.*/PZDR_EXPECTED_PCR0=$PCR0/" /etc/pzdr/pzdr.env
 ```
+
+## Preflight
+
+Run the host readiness check before starting services:
+
+```bash
+sudo scripts/day2_preflight.sh
+```
+
+This verifies Nitro CLI availability, allocator state, EIF placement, PCR0
+pinning, systemd unit installation, and parent proxy binary placement.
 
 ## Start Services
 
@@ -73,13 +79,7 @@ sudo systemctl enable --now pzdr-enclave.service
 sudo systemctl enable --now vsock-parent-proxy.service
 sudo systemctl enable --now pzdr-enclave-watchdog.timer
 sudo systemctl status pzdr-enclave.service vsock-parent-proxy.service
-sudo systemctl list-timers pzdr-enclave-watchdog.timer
 ```
-
-The watchdog timer fires every 15 seconds. If the enclave ever leaves the
-`RUNNING` state (crash inside the VM, OOM, etc.) the watchdog will restart
-`pzdr-enclave.service`. Without this, a silent enclave death produces 502s at
-the parent proxy until a human notices.
 
 ## Canary
 
@@ -91,6 +91,7 @@ Expected result:
 
 - `ok: true`
 - `proof_valid: true`
+- `measurement` matches `PZDR_EXPECTED_PCR0`
 - receipt contains `leaf_hex`, `root_hex`, and `ledger_size`
 
 ## Evidence
@@ -106,6 +107,7 @@ measurement.
 
 ```bash
 sudo systemctl stop vsock-parent-proxy.service
+sudo systemctl stop pzdr-enclave-watchdog.timer
 sudo systemctl stop pzdr-enclave.service
 ```
 

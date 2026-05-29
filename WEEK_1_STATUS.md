@@ -1,6 +1,6 @@
 # PZDR Week 1 Status
 
-Date: 2026-05-28
+Date: 2026-05-29
 
 ## Done Today
 
@@ -23,6 +23,19 @@ Date: 2026-05-28
 - Added Marketplace metering payload helpers and docs.
 - Added Day 2 Nitro host setup, systemd, canary, and evidence scripts.
 - Downloaded a local Terraform binary and validated the starter AWS stack.
+- Added PCR0 pinning to the Day 2 canary and expanded evidence capture.
+- Added an enclave watchdog timer and systemd watchdog heartbeats for the
+  parent proxy.
+- Fixed the EIF build script so `sudo nitro-cli build-enclave` output is
+  captured through `sudo tee`.
+- Renamed the deletion proof channel key field to `channel_public_key_hex` so
+  the proof schema matches the actual encoding.
+- Added `scripts/validate_linux.sh` for native Linux/WSL validation.
+- Added `scripts/day2_preflight.sh` for EC2 parent-host readiness checks.
+- Added `scripts/prepare_release.ps1` and `scripts/publish_to_github.ps1`.
+- Installed portable GitHub CLI `2.93.0` under the workspace tools directory.
+- Initialized a local Git repository and committed the engineering release.
+- Rebuilt the final reviewed zip with `.git` and generated artifacts excluded.
 
 ## Verification Completed
 
@@ -37,11 +50,14 @@ Date: 2026-05-28
 - `terraform fmt -check -diff`
 - `terraform validate`
 - `powershell -ExecutionPolicy Bypass -File .\scripts\validate_release.ps1`
+- `scripts/validate_linux.sh` under WSL with Rust `1.96.0`
+- `cargo test --workspace` under WSL with a dummy PCR0
+- `shellcheck -x` on the shell scripts and Terraform userdata
 - OpenAPI, Docker Compose, GitHub Actions, and package JSON parse checks
 
-`cargo test --workspace --target x86_64-unknown-linux-gnu` was not completed on
-this Windows host because the Linux target test build needs a Linux linker
-(`cc`). The Marketplace metering crate unit tests do pass locally.
+The local WSL validation warns that native Linux Node, Terraform, and Docker
+integration are not installed in WSL. The Windows release validator covers the
+TypeScript SDK, Terraform, and Docker Compose config paths successfully.
 
 ## Current Technical Status
 
@@ -57,6 +73,8 @@ Works at compile/check level:
 - CI definition
 - Marketplace metering payload generation
 - Day 2 host setup scripts
+- EC2 Day 2 preflight script
+- Local release commit and zip packaging
 
 Still needs real environment validation:
 
@@ -92,6 +110,7 @@ Use `AWS_MARKETPLACE_REGISTRATION.md` for the portal pass.
 7. Fetch `/v1/attestation`.
 8. Run the TypeScript SDK canary request.
 9. Save the proof, receipt, and measurement as the first release evidence.
+10. Run `scripts/day2_preflight.sh` before enabling the services.
 
 See `docs/DAY2_NITRO_BRINGUP.md` for the exact command sequence.
 

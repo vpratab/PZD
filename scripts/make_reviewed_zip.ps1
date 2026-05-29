@@ -31,12 +31,49 @@ if (Test-Path -LiteralPath $Out) {
   Remove-Item -LiteralPath $Out -Force
 }
 
-Compress-Archive -LiteralPath $Root -DestinationPath $Out -CompressionLevel Optimal
-
+Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
+$archive = [System.IO.Compression.ZipFile]::Open($Out, [System.IO.Compression.ZipArchiveMode]::Create)
+try {
+  $top = Split-Path -Leaf $Root
+  $skipPrefixes = @(
+    "target\",
+    "sdk\typescript\node_modules\",
+    "sdk\typescript\dist\",
+    "aws\terraform\.terraform\",
+    ".git\"
+  )
+
+  $files = Get-ChildItem -LiteralPath $Root -Recurse -File -Force | Where-Object {
+    $full = $_.FullName
+    $rel = $full.Substring($Root.Length + 1)
+    $skip = $false
+    foreach ($prefix in $skipPrefixes) {
+      if ($rel.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
+        $skip = $true
+        break
+      }
+    }
+    -not $skip
+  }
+
+  foreach ($file in $files) {
+    $rel = $file.FullName.Substring($Root.Length + 1).Replace("\", "/")
+    $entryName = "$top/$rel"
+    [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+      $archive,
+      $file.FullName,
+      $entryName,
+      [System.IO.Compression.CompressionLevel]::Optimal
+    ) | Out-Null
+  }
+} finally {
+  $archive.Dispose()
+}
+
 $archive = [System.IO.Compression.ZipFile]::OpenRead($Out)
 try {
-  $bad = $archive.Entries | Where-Object { $_.FullName -match '(^|/)(target|node_modules|dist|\.terraform)(/|$)' }
+  $bad = $archive.Entries | Where-Object { $_.FullName -match '(^|/)(target|node_modules|dist|\.terraform|\.git)(/|$)' }
   if ($bad) {
     throw "Generated artifacts leaked into zip: $($bad[0].FullName)"
   }

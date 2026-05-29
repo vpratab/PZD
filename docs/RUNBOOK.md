@@ -7,8 +7,6 @@
 - Fetch attestation and compare `measurement` to the expected PCR0.
 - Send a canary inference and verify the returned proof offline.
 - Confirm ledger size increases after canary traffic.
-- Confirm `pzdr-enclave-watchdog.timer` is active: `systemctl list-timers pzdr-enclave-watchdog.timer`.
-- Confirm `PZDR_EXPECTED_PCR0` in `/etc/pzdr/pzdr.env` still matches the deployed EIF measurement.
 
 ## Deploy
 
@@ -23,7 +21,10 @@ See `docs/DAY2_NITRO_BRINGUP.md` for the first bring-up sequence.
 ## Systemd Services
 
 - `ops/systemd/pzdr-enclave.service` launches the EIF through `nitro-cli`.
+- `ops/systemd/pzdr-enclave-watchdog.timer` checks every 15 seconds that the
+  enclave with the configured CID is still `RUNNING` and restarts it if not.
 - `ops/systemd/vsock-parent-proxy.service` runs the parent HTTP to vsock proxy.
+  The proxy sends `sd_notify` readiness and watchdog heartbeats to systemd.
 - `/etc/pzdr/pzdr.env` stores CID, port, EIF path, memory, CPU count, and
   Marketplace product code.
 

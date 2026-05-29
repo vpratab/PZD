@@ -142,8 +142,38 @@ async fn main() -> Result<()> {
         .await
         .with_context(|| format!("bind {}", args.listen))?;
     info!(addr=%args.listen, "listening");
+    notify_systemd_ready(&args.listen);
+    spawn_systemd_watchdog();
     axum::serve(listener, app).await.context("axum serve")?;
     Ok(())
+}
+
+fn notify_systemd_ready(addr: &str) {
+    if let Err(e) = sd_notify::notify(&[
+        sd_notify::NotifyState::Ready,
+        sd_notify::NotifyState::Status(&format!("listening on {addr}")),
+    ]) {
+        warn!(?e, "systemd ready notification failed");
+    }
+}
+
+fn spawn_systemd_watchdog() {
+    let Some(period) = sd_notify::watchdog_enabled() else {
+        return;
+    };
+    let mut tick = period / 2;
+    if tick < std::time::Duration::from_secs(1) {
+        tick = std::time::Duration::from_secs(1);
+    }
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(tick);
+        loop {
+            interval.tick().await;
+            if let Err(e) = sd_notify::notify(&[sd_notify::NotifyState::Watchdog]) {
+                warn!(?e, "systemd watchdog notification failed");
+            }
+        }
+    });
 }
 
 async fn metrics_handler() -> impl IntoResponse {

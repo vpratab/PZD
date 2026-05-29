@@ -52,6 +52,8 @@ Still required before public production launch:
 See `docs/QUICKSTART.md`.
 
 For the real Nitro bring-up sequence, see `docs/DAY2_NITRO_BRINGUP.md`.
+Run `scripts/day2_preflight.sh` on the EC2 parent partition before starting
+the systemd services.
 
 ## Validate
 
@@ -59,6 +61,24 @@ On Windows from the repository root:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\validate_release.ps1
+```
+
+On Linux or WSL:
+
+```bash
+scripts/validate_linux.sh
+```
+
+To prepare a local release commit and zip:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\prepare_release.ps1
+```
+
+To publish after GitHub authentication:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\publish_to_github.ps1 -Repo assurezero/pzdr
 ```
 
 ## API

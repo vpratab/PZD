@@ -58,8 +58,10 @@ impl MarketplaceUsageEvent {
             &input.product_code,
             &input.customer_aws_account_id,
             &input.dimension,
+            &input.tenant_id,
             &input.request_id,
             &input.proof_id,
+            &input.receipt_root_hex,
         ]);
 
         Ok(Self {
@@ -258,6 +260,57 @@ mod tests {
     }
 
     #[test]
+    fn idempotency_key_changes_with_each_billing_scope_field() {
+        let base = sample_event("req-1");
+
+        let tenant = MarketplaceUsageEvent::inference(
+            "prod-123",
+            "111122223333",
+            "tenant-different",
+            "req-1",
+            "proof-abc",
+            "aa55",
+            1_779_984_000,
+        )
+        .unwrap();
+        let product = MarketplaceUsageEvent::inference(
+            "prod-different",
+            "111122223333",
+            "tenant-a",
+            "req-1",
+            "proof-abc",
+            "aa55",
+            1_779_984_000,
+        )
+        .unwrap();
+        let customer = MarketplaceUsageEvent::inference(
+            "prod-123",
+            "999900001111",
+            "tenant-a",
+            "req-1",
+            "proof-abc",
+            "aa55",
+            1_779_984_000,
+        )
+        .unwrap();
+        let receipt = MarketplaceUsageEvent::inference(
+            "prod-123",
+            "111122223333",
+            "tenant-a",
+            "req-1",
+            "proof-abc",
+            "bb66",
+            1_779_984_000,
+        )
+        .unwrap();
+
+        assert_ne!(base.idempotency_key, tenant.idempotency_key);
+        assert_ne!(base.idempotency_key, product.idempotency_key);
+        assert_ne!(base.idempotency_key, customer.idempotency_key);
+        assert_ne!(base.idempotency_key, receipt.idempotency_key);
+    }
+
+    #[test]
     fn builds_batch_meter_usage_payload() {
         let event = sample_event("req-1");
         let payload = batch_meter_usage_payload("prod-123", &[event]).unwrap();
@@ -284,61 +337,5 @@ mod tests {
 
         let err = batch_meter_usage_payload("prod-123", &events).unwrap_err();
         assert!(matches!(err, MeteringError::TooManyRecords(26)));
-    }
-
-    #[test]
-    fn idempotency_key_changes_when_any_field_changes() {
-        // Changing any non-cosmetic field must produce a different idempotency
-        // key, otherwise BatchMeterUsage will reject the record as a duplicate
-        // of a previously sent one (DuplicateRecordException).
-        let base = sample_event("req-1");
-
-        let tenant = MarketplaceUsageEvent::inference(
-            "prod-123",
-            "111122223333",
-            "tenant-DIFFERENT",
-            "req-1",
-            "proof-abc",
-            "aa55",
-            1_779_984_000,
-        )
-        .unwrap();
-        assert_ne!(base.idempotency_key, tenant.idempotency_key);
-
-        let product = MarketplaceUsageEvent::inference(
-            "prod-DIFFERENT",
-            "111122223333",
-            "tenant-a",
-            "req-1",
-            "proof-abc",
-            "aa55",
-            1_779_984_000,
-        )
-        .unwrap();
-        assert_ne!(base.idempotency_key, product.idempotency_key);
-
-        let customer = MarketplaceUsageEvent::inference(
-            "prod-123",
-            "999988887777",
-            "tenant-a",
-            "req-1",
-            "proof-abc",
-            "aa55",
-            1_779_984_000,
-        )
-        .unwrap();
-        assert_ne!(base.idempotency_key, customer.idempotency_key);
-
-        let proof = MarketplaceUsageEvent::inference(
-            "prod-123",
-            "111122223333",
-            "tenant-a",
-            "req-1",
-            "proof-XYZ",
-            "aa55",
-            1_779_984_000,
-        )
-        .unwrap();
-        assert_ne!(base.idempotency_key, proof.idempotency_key);
     }
 }

@@ -32,7 +32,7 @@ export interface DeletionProofStatement {
   upstream_tokens_in?: number;
   upstream_tokens_out?: number;
   measurement: string;
-  channel_public_key_b64?: string;
+  channel_public_key_hex?: string;
   tee_backend?: string;
   compute_tier?: string;
   proof_mode?: string;

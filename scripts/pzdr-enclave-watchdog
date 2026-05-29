@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cid="${ENCLAVE_CID:-16}"
+
+if nitro-cli describe-enclaves \
+  | jq -e --argjson cid "$cid" '.[] | select(.EnclaveCID == $cid and .State == "RUNNING")' \
+  >/dev/null; then
+  exit 0
+fi
+
+echo "PZDR enclave for CID $cid is not RUNNING; restarting pzdr-enclave.service" >&2
+systemctl restart pzdr-enclave.service
