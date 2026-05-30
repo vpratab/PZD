@@ -53,9 +53,10 @@ integrations.
 ## Current Limitations
 
 - The bundled upstream model call is deterministic mock logic.
-- Certificate chain validation parses the Nitro certificate chain and verifies
-  the COSE signature; full production-grade path validation should be completed
-  before a public compliance claim.
+- Nitro certificate validation checks time validity, issuer/subject linkage,
+  issuer signatures, and the COSE signature against the pinned AWS Nitro root.
+  Production should still keep the AWS root bundle current and add alerting for
+  attestation validation failures.
 - The Merkle log is in-memory in the enclave prototype. Production should
   persist and externally anchor roots.
 - No HIPAA, FedRAMP, SOC 2, ISO 27001, or legal compliance status is claimed by

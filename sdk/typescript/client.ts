@@ -6,8 +6,8 @@
  *   POST /v1/gateway/inference
  */
 
-import sodium from "libsodium-wrappers";
 import { canonicalJSON } from "./canonical.js";
+import sodium from "./sodium.js";
 
 export { canonicalJSON } from "./canonical.js";
 

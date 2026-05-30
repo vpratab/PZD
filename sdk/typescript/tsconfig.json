@@ -9,5 +9,5 @@
     "skipLibCheck": true,
     "lib": ["ES2022", "DOM"]
   },
-  "include": ["client.ts", "canonical.ts"]
+  "include": ["client.ts", "canonical.ts", "sodium.ts"]
 }

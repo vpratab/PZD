@@ -33,7 +33,8 @@ Not trusted:
 
 ## Required Production Hardening
 
-- Complete Nitro certificate path validation against current AWS trust anchors.
+- Keep the pinned AWS Nitro trust anchors current and alert on attestation
+  validation failures.
 - Persist Merkle state and anchor ledger roots outside the enclave.
 - Add KMS decrypt with `kms:RecipientAttestation` measurement conditions.
 - Add Marketplace onboarding, entitlement checks, and batched metering.
