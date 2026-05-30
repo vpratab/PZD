@@ -9,7 +9,11 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$ROOT/eif/out"
 mkdir -p "$OUT"
 
-PZDR_VERSION="${PZDR_VERSION:-v0.1.0}"
+if [ -z "${PZDR_VERSION:-}" ]; then
+  PZDR_VERSION="$(git -C "$ROOT" describe --tags --exact-match 2>/dev/null \
+    || git -C "$ROOT" describe --tags --abbrev=0 2>/dev/null \
+    || echo v0.1.0)"
+fi
 COSIGN_KEY="${COSIGN_KEY:-$ROOT/eif/signing-key.pem}"
 IMAGE_TAG="pzdr/enclave:${PZDR_VERSION}"
 EIF_PATH="$OUT/pzdr-enclave-${PZDR_VERSION}.eif"
@@ -70,6 +74,6 @@ Build complete.
 
 Next:
   1. Set pzdr_measurement in aws/terraform/terraform.tfvars.
-  2. Copy the EIF to /opt/pzdr/eif/pzdr-enclave-v0.1.0.eif on the parent host.
+  2. Copy the EIF to /opt/pzdr/eif/pzdr-enclave-${PZDR_VERSION}.eif on the parent host.
   3. Start pzdr-enclave.service and vsock-parent-proxy.service.
 EOF

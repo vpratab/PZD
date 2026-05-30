@@ -3,13 +3,13 @@
 #
 # Usage:
 #   ./push_to_github.sh
-#   ./push_to_github.sh assurezero/pzdr
-#   ./push_to_github.sh assurezero/pzdr --private
+#   ./push_to_github.sh vpratab/PZD
+#   ./push_to_github.sh vpratab/PZD --private
 #   ./push_to_github.sh --private
 
 set -euo pipefail
 
-REPO="assurezero/pzdr"
+REPO="vpratab/PZD"
 VIS="--public"
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 

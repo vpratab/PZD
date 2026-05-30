@@ -29,8 +29,14 @@ jq -r '.proof_verifier_key_hex // empty' "$OUT/attestation.json" > "$OUT/proof_v
   echo "canary failed; see canary_stderr.log" > "$OUT/canary_failed.txt"
 }
 
-cp "$ROOT/eif/out/pzdr-enclave-v0.1.0.measurements.json" "$OUT/" 2>/dev/null || true
-cp "$ROOT/eif/out/pzdr-enclave-v0.1.0.eif.sig" "$OUT/" 2>/dev/null || true
+shopt -s nullglob
+for artifact in \
+  "$ROOT"/eif/out/pzdr-enclave-*.measurements.json \
+  "$ROOT"/eif/out/pzdr-enclave-*.eif.sig
+do
+  cp "$artifact" "$OUT/" 2>/dev/null || true
+done
+shopt -u nullglob
 
 cat > "$OUT/MANIFEST.txt.tmp" <<EOF
 captured_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -42,8 +48,8 @@ ledger_root=ledger_root.json
 nitro_describe=describe-enclaves.json
 canary_stdout=canary_output.json
 canary_stderr=canary_stderr.log
-measurements=pzdr-enclave-v0.1.0.measurements.json if available
-eif_signature=pzdr-enclave-v0.1.0.eif.sig if available
+measurements=pzdr-enclave-*.measurements.json if available
+eif_signature=pzdr-enclave-*.eif.sig if available
 EOF
 mv "$OUT/MANIFEST.txt.tmp" "$OUT/MANIFEST.txt"
 
@@ -63,8 +69,8 @@ Files:
 - describe-enclaves.json
 - canary_output.json
 - canary_stderr.log
-- pzdr-enclave-v0.1.0.measurements.json, if available
-- pzdr-enclave-v0.1.0.eif.sig, if available
+- pzdr-enclave-*.measurements.json, if available
+- pzdr-enclave-*.eif.sig, if available
 EOF
 mv "$OUT/README.md.tmp" "$OUT/README.md"
 

@@ -43,21 +43,25 @@ sudo install -m 0755 target/release/vsock-parent-proxy /usr/local/bin/vsock-pare
 ## Build EIF
 
 ```bash
-cd eif
-PZDR_EXPECTED_PCR0=provisional ./build-eif.sh
+PZDR_VERSION="${PZDR_VERSION:-$(git describe --tags --abbrev=0 2>/dev/null || echo v0.1.0)}"
+(cd eif && PZDR_VERSION="$PZDR_VERSION" ./build-eif.sh)
 ```
 
 Copy the signed EIF into place:
 
 ```bash
-sudo install -m 0644 out/pzdr-enclave-v0.1.0.eif /opt/pzdr/eif/pzdr-enclave-v0.1.0.eif
+sudo install -m 0644 "eif/out/pzdr-enclave-${PZDR_VERSION}.eif" \
+  "/opt/pzdr/eif/pzdr-enclave-${PZDR_VERSION}.eif"
+sudo sed -i \
+  "s#^PZDR_EIF_PATH=.*#PZDR_EIF_PATH=/opt/pzdr/eif/pzdr-enclave-${PZDR_VERSION}.eif#" \
+  /etc/pzdr/pzdr.env
 ```
 
 Update `/etc/pzdr/pzdr.env` with the real path, CID, CPU count, and memory.
 Also pin the PCR0 expected by the canary:
 
 ```bash
-PCR0=$(jq -r .PCR0 eif/out/pzdr-enclave-v0.1.0.measurements.json)
+PCR0=$(jq -r .PCR0 "eif/out/pzdr-enclave-${PZDR_VERSION}.measurements.json")
 sudo sed -i "s/^PZDR_EXPECTED_PCR0=.*/PZDR_EXPECTED_PCR0=$PCR0/" /etc/pzdr/pzdr.env
 ```
 

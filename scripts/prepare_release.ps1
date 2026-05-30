@@ -1,5 +1,5 @@
 param(
-  [string]$Repo = "assurezero/pzdr",
+  [string]$Repo = "vpratab/PZD",
   [switch]$SkipValidation
 )
 

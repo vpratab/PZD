@@ -30,6 +30,8 @@ need jq
 need systemctl
 need nitro-cli
 need docker
+need node
+need npm
 
 step "Environment"
 [ -f "$ENV_FILE" ] || fail "environment file not found: $ENV_FILE"

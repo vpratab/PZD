@@ -78,7 +78,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\prepare_release.ps1
 To publish after GitHub authentication:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\publish_to_github.ps1 -Repo assurezero/pzdr
+powershell -ExecutionPolicy Bypass -File .\scripts\publish_to_github.ps1 -Repo vpratab/PZD
 ```
 
 ## API

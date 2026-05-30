@@ -61,8 +61,8 @@ paths:
     post:
       summary: Submit an inference request through the Gateway
       description: |
-        Decrypt inside enclave → verify commitment → evaluate policy → call upstream
-        model → wipe plaintext → sign v3 deletion proof → append to Merkle ledger →
+        Decrypt inside enclave -> verify commitment -> evaluate policy -> call upstream
+        model -> wipe plaintext -> sign v3 deletion proof -> append to Merkle ledger ->
         return model response + signed proof + ledger receipt.
 
         On any failure path the Gateway still returns a signed Failure Proof so
@@ -94,7 +94,7 @@ paths:
       summary: Get the current Merkle ledger root
       description: |
         Returns the size of the ledger and its current root hash. Use this as a
-        consistency check anchor — for full audit, also call /v1/ledger/proof/{idx}.
+        consistency check anchor; for full audit, also call /v1/ledger/proof/{idx}.
       responses:
         '200':
           description: Current ledger root
@@ -144,7 +144,7 @@ components:
           description: Raw AWS Nitro attestation document, base64-encoded.
         measurement:
           type: string
-          description: Enclave code identity. Hex-encoded SHA-256 of the canonical enclave image.
+          description: Enclave code identity. For AWS Nitro this is the 96-hex-character PCR0/ImageSha384 measurement.
         channel_public_key_hex:
           type: string
           description: X25519 public key the client must encrypt to. Hex-encoded.
@@ -236,7 +236,7 @@ components:
         tenant_id: { type: string }
         counter:
           type: integer
-          description: Monotonic counter — anti-rollback.
+          description: Monotonic counter for anti-rollback.
         timestamp:
           type: integer
           description: Integer Unix seconds. Kept integral for cross-language proof canonicalization.

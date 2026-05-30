@@ -13,7 +13,7 @@ if ! command -v dnf >/dev/null; then
   exit 1
 fi
 
-dnf install -y aws-nitro-enclaves-cli aws-nitro-enclaves-cli-devel docker jq curl
+dnf install -y aws-nitro-enclaves-cli aws-nitro-enclaves-cli-devel docker jq curl git rust cargo nodejs npm
 systemctl enable --now docker nitro-enclaves-allocator.service
 
 id -u pzdr >/dev/null 2>&1 || useradd --system --home /var/lib/pzdr --create-home --shell /sbin/nologin pzdr
@@ -53,7 +53,7 @@ cat <<'EOF'
 PZDR Nitro host setup complete.
 
 Next:
-  1. Copy the signed EIF to /opt/pzdr/eif/pzdr-enclave-v0.1.0.eif
+  1. Copy the signed EIF to the PZDR_EIF_PATH configured in /etc/pzdr/pzdr.env
   2. Copy vsock-parent-proxy to /usr/local/bin/vsock-parent-proxy
   3. Review /etc/pzdr/pzdr.env
   4. systemctl enable --now pzdr-enclave.service

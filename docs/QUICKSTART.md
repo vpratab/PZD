@@ -5,8 +5,8 @@ Get from zero to a verified signed deletion receipt.
 ## Local Docker Smoke Check
 
 ```bash
-git clone https://github.com/assurezero/pzdr
-cd pzdr
+git clone https://github.com/vpratab/PZD
+cd PZD
 docker compose up -d
 
 # Confirm the parent proxy is reachable.
@@ -51,15 +51,15 @@ console.log("Proof verifies?", valid);
 ## Production Nitro Bring-Up
 
 ```bash
-cd eif
-PZDR_EXPECTED_PCR0=provisional ./build-eif.sh
+PZDR_VERSION="${PZDR_VERSION:-$(git describe --tags --abbrev=0 2>/dev/null || echo v0.1.0)}"
+(cd eif && PZDR_VERSION="$PZDR_VERSION" ./build-eif.sh)
 ```
 
 Then launch the resulting EIF on a Nitro-enabled EC2 instance:
 
 ```bash
 sudo nitro-cli run-enclave \
-  --eif-path eif/out/pzdr-enclave-v0.1.0.eif \
+  --eif-path "eif/out/pzdr-enclave-${PZDR_VERSION}.eif" \
   --memory 2048 \
   --cpu-count 2 \
   --enclave-cid 16
