@@ -241,32 +241,48 @@ impl Verifier {
 
     fn verify_chain(
         leaf_der: &[u8],
-        intermediates: &[Vec<u8>],
+        cabundle: &[Vec<u8>],
         root_pem: &[u8],
     ) -> Result<(), NitroError> {
         use x509_cert::der::Decode;
-        // Parse leaf
-        let _leaf = x509_cert::Certificate::from_der(leaf_der)
+
+        let leaf = x509_cert::Certificate::from_der(leaf_der)
             .map_err(|e| NitroError::CertChain(format!("leaf: {e:?}")))?;
-        // Parse intermediates
-        for (i, der) in intermediates.iter().enumerate() {
-            let _c = x509_cert::Certificate::from_der(der)
-                .map_err(|e| NitroError::CertChain(format!("intermediate {i}: {e:?}")))?;
+        let mut pool = Vec::with_capacity(cabundle.len());
+        for (i, der) in cabundle.iter().enumerate() {
+            pool.push(
+                x509_cert::Certificate::from_der(der)
+                    .map_err(|e| NitroError::CertChain(format!("cabundle cert {i}: {e:?}")))?,
+            );
         }
-        // Parse root
+
         let pem = std::str::from_utf8(root_pem)
             .map_err(|_| NitroError::CertChain("root not utf-8".into()))?;
         let (_label, root_der) = pem_rfc7468::decode_vec(pem.as_bytes())
             .map_err(|e| NitroError::CertChain(format!("root pem: {e:?}")))?;
-        let _root = x509_cert::Certificate::from_der(&root_der)
+        let root = x509_cert::Certificate::from_der(&root_der)
             .map_err(|e| NitroError::CertChain(format!("root: {e:?}")))?;
-        let mut chain = Vec::with_capacity(intermediates.len() + 1);
-        chain.push(_leaf);
-        for der in intermediates {
-            chain.push(
-                x509_cert::Certificate::from_der(der)
-                    .map_err(|e| NitroError::CertChain(format!("intermediate: {e:?}")))?,
-            );
+
+        // AWS documents carry `cabundle` root-first. Build the validation path
+        // by issuer lookup so both AWS order and conventional leaf-first order
+        // validate to the same pinned root.
+        let mut chain = Vec::with_capacity(cabundle.len() + 1);
+        chain.push(leaf);
+        loop {
+            let idx = chain.len() - 1;
+            let issuer = chain[idx].tbs_certificate.issuer.clone();
+            if issuer == root.tbs_certificate.subject {
+                break;
+            }
+            let next_idx = pool
+                .iter()
+                .position(|candidate| candidate.tbs_certificate.subject == issuer)
+                .ok_or_else(|| {
+                    NitroError::CertChain(format!(
+                        "no issuer found for chain cert {idx}: issuer={issuer}"
+                    ))
+                })?;
+            chain.push(pool.remove(next_idx));
         }
 
         let now = std::time::SystemTime::now()
@@ -275,7 +291,7 @@ impl Verifier {
             .as_secs();
         for (idx, cert) in chain.iter().enumerate() {
             Self::verify_cert_validity(cert, now, &format!("chain cert {idx}"))?;
-            let issuer = chain.get(idx + 1).unwrap_or(&_root);
+            let issuer = chain.get(idx + 1).unwrap_or(&root);
             if cert.tbs_certificate.issuer != issuer.tbs_certificate.subject {
                 return Err(NitroError::CertChain(format!(
                     "issuer/subject mismatch at chain index {idx}: issuer={} subject={}",
@@ -284,7 +300,7 @@ impl Verifier {
             }
             Self::verify_cert_signature(cert, issuer, &format!("chain cert {idx}"))?;
         }
-        Self::verify_cert_validity(&_root, now, "pinned AWS root")?;
+        Self::verify_cert_validity(&root, now, "pinned AWS root")?;
         // Validate the supplied Nitro chain against our pinned AWS root: every
         // certificate must be time-valid, issuer/subject-linked, and signed by
         // the next issuer in the path. This is intentionally narrower than a
