@@ -49,6 +49,20 @@ Run "npm" @("run", "build")
 Run "npm" @("test")
 Pop-Location
 
+Step "Cross-language provability"
+Push-Location $Root
+Run "python" @("tools\pzdr_gen_vectors.py")
+Run "python" @("tools\pzdr_verify.py", "self-test")
+Run "python" @("tools\pzdr_verify.py", "verify-bundle", "tools\conformance\bundle.json")
+Run "node" @("sdk\typescript\transparency.conformance.mjs")
+$VerifierKey = (Get-Content -LiteralPath (Join-Path $Root "tools\conformance\enclave_key.hex") -Raw).Trim()
+& python -S tools\pzdr_verify.py verify-proof tools\conformance\proof_success.json --key $VerifierKey
+if ($LASTEXITCODE -eq 0) {
+  throw "Verifier failed open without its Ed25519 dependency"
+}
+Write-Host "Missing Ed25519 dependency fails closed."
+Pop-Location
+
 Step "Docker Compose config"
 Run "docker" @("compose", "-f", (Join-Path $Root "docker-compose.yml"), "config", "--quiet")
 

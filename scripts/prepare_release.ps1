@@ -1,5 +1,6 @@
 param(
   [string]$Repo = "vpratab/PZD",
+  [string]$Version = "v0.1.6",
   [switch]$SkipValidation
 )
 
@@ -44,6 +45,15 @@ try {
     }
   } else {
     git commit -m "Initial PZDR Gateway engineering release"
+  }
+
+  $OldErrorActionPreference = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  git rev-parse --verify "refs/tags/$Version" *> $null
+  $TagStatus = $LASTEXITCODE
+  $ErrorActionPreference = $OldErrorActionPreference
+  if ($TagStatus -ne 0) {
+    git tag -a $Version -m "PZDR Gateway $Version release"
   }
 
   $LocalGh = Join-Path (Split-Path $Root -Parent | Split-Path -Parent) "tools\gh\extract\bin\gh.exe"

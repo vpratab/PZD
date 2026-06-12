@@ -1,0 +1,46 @@
+{
+  "statement": {
+    "proof_id": "0000000000000000000000009e3779b1",
+    "proof_version": 3,
+    "schema_url": "pzdr://proof/v3",
+    "session_id": "0000000000009e37",
+    "tenant_id": "combat-sys-1",
+    "counter": 1,
+    "timestamp": 1780000001,
+    "commitment_hex": "9e16670e0662cab544ba18dcbe34988e362b45d63afe6471c50faf94bf6dc992",
+    "processor_id": "gateway",
+    "upstream_model": "mock-claude-sonnet-4.5",
+    "upstream_tokens_in": 10,
+    "upstream_tokens_out": 16,
+    "measurement": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+    "channel_public_key_hex": "68267ad98b12e1f55de5940e752e1ba41a216e7659f5fe8827822ff56d884401",
+    "proof_verifier_key_hex": "69188d2e19cd90d0e452c5b691030a18df1315d3ae50d01ff7ef7c44944fccaa",
+    "tee_backend": "aws-nitro",
+    "compute_tier": "tier1_cpu_enclave_only",
+    "proof_mode": "attestation",
+    "success": true,
+    "error_code": null,
+    "policy_decision": {
+      "allow": true,
+      "reason": "allowed",
+      "policy_id": "pzdr-default",
+      "policy_version": 1,
+      "policy_hash": "96b9a9b4df3d1538f068d2b87b8c5952b78da9e39e2c23d28ee71feb025ade48",
+      "tenant": "combat-sys-1",
+      "processor": "gateway"
+    },
+    "zeroization_report": {
+      "input_buffer_wiped": true,
+      "response_buffer_wiped": false,
+      "response_buffer_returned": true
+    },
+    "result_hash_hex": "84db80aea1c9efdf9780191c37db919c78aef24a63eba74ef9c8cbc2a8186c89",
+    "output_governance": {
+      "retention_policy": "returned-only",
+      "expires_at": 1780000000
+    },
+    "failure_detail": null
+  },
+  "signer_key_id": "enclave-proof-v1",
+  "signature_b64": "xNTi+Q/X2H31FM/kIhs+IF9Jd9Px3WbpTWedWrDYf2fqTXKIIWEvwwM5wkQumIP0V2SDlj/orUEYsPRmIME9Dw=="
+}

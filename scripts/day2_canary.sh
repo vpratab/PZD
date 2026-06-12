@@ -26,13 +26,8 @@ if (!expectedPcr0) {
   process.exit(2);
 }
 
-const client = new PZDRClient({ url: gatewayUrl });
+const client = new PZDRClient({ url: gatewayUrl, expectedPcr0 });
 const attestation = await client.getAttestation();
-
-if (attestation.measurement !== expectedPcr0) {
-  console.error(`PCR0 mismatch: got ${attestation.measurement}, expected ${expectedPcr0}`);
-  process.exit(3);
-}
 
 const result = await client.process({
   prompt: "PZDR canary request",
@@ -41,10 +36,16 @@ const result = await client.process({
 });
 
 const proofValid = await client.verifyProof(result.proof, attestation.proof_verifier_key_hex);
+const receiptValid = await client.verifyReceipt(
+  result.proof,
+  result.receipt,
+  attestation.proof_verifier_key_hex,
+);
 
 const evidence = {
   ok: result.ok,
   proof_valid: proofValid,
+  receipt_valid: receiptValid,
   measurement: attestation.measurement,
   proof_verifier_key_hex: attestation.proof_verifier_key_hex,
   model_response: result.modelResponse,
@@ -55,7 +56,7 @@ const evidence = {
 
 console.log(JSON.stringify(evidence, null, 2));
 
-if (!result.ok || !proofValid) {
+if (!result.ok || !proofValid || !receiptValid) {
   process.exit(1);
 }
 EOF

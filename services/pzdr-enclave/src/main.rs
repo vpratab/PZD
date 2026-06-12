@@ -12,7 +12,10 @@
 //!   - Plaintext never persists outside `Zeroizing<...>` scopes
 //!   - Every session emits a signed proof (success OR failure)
 //!   - The proof signing key is generated on first boot and never leaves the enclave
-//!   - The X25519 channel pubkey is bound into the Nitro attestation document
+//!   - Both the X25519 channel key and Ed25519 proof key are bound into Nitro attestation
+
+mod policy;
+mod transparency;
 
 use anyhow::{Context, Result};
 use base64::Engine as _;
@@ -33,6 +36,9 @@ use tokio::sync::Mutex;
 use tokio_vsock::{VsockAddr, VsockListener, VsockStream, VMADDR_CID_ANY};
 use tracing::{error, info};
 use zeroize::Zeroizing;
+
+use policy::Policy;
+use transparency::TransparencyLog;
 
 const ENCLAVE_PORT: u32 = 5000;
 const EXPECTED_PCR0: &str = env!("PZDR_EXPECTED_PCR0", "PCR0 must be supplied at build time");
@@ -99,6 +105,26 @@ async fn dispatch(env: &VsockEnvelope, state: &EnclaveState) -> VsockResponse {
             }
         }
         ("GET", "/v1/ledger/root") => json_resp(200, &state.ledger_root().await),
+        ("GET", path) if path.starts_with("/v1/ledger/proof/") => {
+            let idx = path.trim_start_matches("/v1/ledger/proof/");
+            match idx.parse::<usize>() {
+                Ok(idx) => match state.ledger_proof(idx).await {
+                    Some(proof) => json_resp(200, &proof),
+                    None => json_resp(404, &json!({"error": "ledger_index_not_found"})),
+                },
+                Err(_) => json_resp(400, &json!({"error": "invalid_ledger_index"})),
+            }
+        }
+        ("GET", path) if path.starts_with("/v1/ledger/consistency/") => {
+            let size = path.trim_start_matches("/v1/ledger/consistency/");
+            match size.parse::<usize>() {
+                Ok(size) => match state.ledger_consistency(size).await {
+                    Some(proof) => json_resp(200, &proof),
+                    None => json_resp(400, &json!({"error": "invalid_tree_size"})),
+                },
+                Err(_) => json_resp(400, &json!({"error": "invalid_tree_size"})),
+            }
+        }
         _ => json_resp(
             404,
             &json!({"error": "not found", "method": env.method, "path": env.path}),
@@ -125,7 +151,8 @@ struct EnclaveState {
     channel_pk: x25519_dalek::PublicKey,
     proof_sk: SigningKey,
     counter: AtomicU64,
-    ledger: Mutex<MerkleLog>,
+    ledger: Mutex<TransparencyLog>,
+    policy: Policy,
     nsm: nitro_attestation::enclave::EnclaveSelf,
 }
 
@@ -148,17 +175,24 @@ impl EnclaveState {
             channel_pk,
             proof_sk,
             counter: AtomicU64::new(0),
-            ledger: Mutex::new(MerkleLog::new()),
+            ledger: Mutex::new(TransparencyLog::new()),
+            policy: Policy::default_v1(),
             nsm,
         })
     }
 
-    /// Generate a fresh Nitro attestation document with our channel pubkey bound in.
+    /// Generate a fresh Nitro attestation document with both public keys bound in.
     /// Clients use this to verify (a) we're running the expected enclave image
     /// and (b) the channel pubkey came from inside the enclave.
     fn publish_attestation(&self) -> Result<AttestationOut> {
         let pubkey = self.channel_pk.as_bytes().to_vec();
-        let user_data = b"pzdr-gateway-v0.1.0".to_vec();
+        let proof_key = self.proof_sk.verifying_key().to_bytes();
+        let binding = json!({
+            "format": "pzdr-attestation-binding/v1",
+            "channel_public_key_hex": hex::encode(&pubkey),
+            "proof_verifier_key_hex": hex::encode(proof_key),
+        });
+        let user_data = canonical_json(&binding)?;
         let doc = self
             .nsm
             .generate_attestation(
@@ -171,7 +205,8 @@ impl EnclaveState {
             nitro_attestation_b64: base64::engine::general_purpose::STANDARD.encode(&doc),
             measurement: EXPECTED_PCR0.into(),
             channel_public_key_hex: hex::encode(pubkey),
-            proof_verifier_key_hex: hex::encode(self.proof_sk.verifying_key().to_bytes()),
+            proof_verifier_key_hex: hex::encode(proof_key),
+            binding_format: "pzdr-attestation-binding/v1".into(),
             tee_backend: "aws-nitro".into(),
             compute_tier: "tier1_cpu_enclave_only".into(),
             timestamp: now_secs(),
@@ -180,20 +215,84 @@ impl EnclaveState {
 
     async fn process_and_delete(&self, body: &[u8], tenant: &str) -> Result<Value> {
         let t0 = std::time::Instant::now();
-        let req: InferenceRequest = serde_json::from_slice(body)?;
+        let req: InferenceRequest = match serde_json::from_slice(body) {
+            Ok(req) => req,
+            Err(_) => {
+                return self
+                    .fail("malformed_request", "", tenant, "gateway", false, t0)
+                    .await
+            }
+        };
+        let processor = req.processor_id.as_deref().unwrap_or("gateway");
 
         // ---- decrypt ----
-        let client_pub = hex::decode(&req.client_pub_hex)?;
-        let ciphertext = hex::decode(&req.ciphertext_hex)?;
-        let nonce_bytes = hex::decode(&req.nonce_hex)?;
+        let client_pub = match hex::decode(&req.client_pub_hex) {
+            Ok(value) => value,
+            Err(_) => {
+                return self
+                    .fail(
+                        "channel_decrypt_failed",
+                        &req.commitment_hex,
+                        tenant,
+                        processor,
+                        false,
+                        t0,
+                    )
+                    .await
+            }
+        };
+        let ciphertext = match hex::decode(&req.ciphertext_hex) {
+            Ok(value) => value,
+            Err(_) => {
+                return self
+                    .fail(
+                        "channel_decrypt_failed",
+                        &req.commitment_hex,
+                        tenant,
+                        processor,
+                        false,
+                        t0,
+                    )
+                    .await
+            }
+        };
+        let nonce_bytes = match hex::decode(&req.nonce_hex) {
+            Ok(value) => value,
+            Err(_) => {
+                return self
+                    .fail(
+                        "channel_decrypt_failed",
+                        &req.commitment_hex,
+                        tenant,
+                        processor,
+                        false,
+                        t0,
+                    )
+                    .await
+            }
+        };
         if client_pub.len() != 32 {
             return self
-                .fail("channel_decrypt_failed", &req.commitment_hex, tenant, t0)
+                .fail(
+                    "channel_decrypt_failed",
+                    &req.commitment_hex,
+                    tenant,
+                    processor,
+                    false,
+                    t0,
+                )
                 .await;
         }
         if nonce_bytes.len() != 24 {
             return self
-                .fail("channel_decrypt_failed", &req.commitment_hex, tenant, t0)
+                .fail(
+                    "channel_decrypt_failed",
+                    &req.commitment_hex,
+                    tenant,
+                    processor,
+                    false,
+                    t0,
+                )
                 .await;
         }
         let mut cp_arr = [0u8; 32];
@@ -203,9 +302,33 @@ impl EnclaveState {
             .diffie_hellman(&x25519_dalek::PublicKey::from(cp_arr));
         let hk = Hkdf::<Sha256>::new(Some(b"pzdr-channel-v1"), shared.as_bytes());
         let mut aead_key = Zeroizing::new([0u8; 32]);
-        hk.expand(b"channel-aead", aead_key.as_mut_slice())
-            .map_err(|_| anyhow::anyhow!("hkdf"))?;
-        let cipher = XChaCha20Poly1305::new_from_slice(aead_key.as_slice())?;
+        if hk.expand(b"channel-aead", aead_key.as_mut_slice()).is_err() {
+            return self
+                .fail(
+                    "channel_key_derivation_failed",
+                    &req.commitment_hex,
+                    tenant,
+                    processor,
+                    false,
+                    t0,
+                )
+                .await;
+        }
+        let cipher = match XChaCha20Poly1305::new_from_slice(aead_key.as_slice()) {
+            Ok(cipher) => cipher,
+            Err(_) => {
+                return self
+                    .fail(
+                        "channel_key_derivation_failed",
+                        &req.commitment_hex,
+                        tenant,
+                        processor,
+                        false,
+                        t0,
+                    )
+                    .await
+            }
+        };
         let nonce = XNonce::from_slice(&nonce_bytes);
         let plaintext = match cipher.decrypt(
             nonce,
@@ -216,49 +339,103 @@ impl EnclaveState {
         ) {
             Ok(pt) => Zeroizing::new(pt),
             Err(_) => {
+                drop(cipher);
+                drop(aead_key);
                 return self
-                    .fail("channel_decrypt_failed", &req.commitment_hex, tenant, t0)
-                    .await
+                    .fail(
+                        "channel_decrypt_failed",
+                        &req.commitment_hex,
+                        tenant,
+                        processor,
+                        false,
+                        t0,
+                    )
+                    .await;
             }
         };
 
         // ---- commitment ----
-        let salt = hex::decode(&req.commitment_salt_hex)?;
+        let salt = match hex::decode(&req.commitment_salt_hex) {
+            Ok(value) => value,
+            Err(_) => {
+                drop(plaintext);
+                drop(cipher);
+                drop(aead_key);
+                return self
+                    .fail(
+                        "invalid_commitment_salt",
+                        &req.commitment_hex,
+                        tenant,
+                        processor,
+                        true,
+                        t0,
+                    )
+                    .await;
+            }
+        };
         let mut h = Sha256::new();
         h.update(&plaintext);
         h.update(&salt);
         h.update(req.commitment_context.as_bytes());
         let recomputed = hex::encode(h.finalize());
         if recomputed != req.commitment_hex {
+            drop(plaintext);
+            drop(cipher);
+            drop(aead_key);
             return self
-                .fail("commitment_mismatch", &req.commitment_hex, tenant, t0)
+                .fail(
+                    "commitment_mismatch",
+                    &req.commitment_hex,
+                    tenant,
+                    processor,
+                    true,
+                    t0,
+                )
                 .await;
         }
 
         // ---- policy ----
-        if plaintext.windows(11).any(|w| w == b"<RESTRICTED") {
+        if let Err(reason) = self.policy.evaluate(&plaintext, processor) {
+            drop(plaintext);
+            drop(cipher);
+            drop(aead_key);
             return self
-                .fail("policy_denied", &req.commitment_hex, tenant, t0)
-                .await;
-        }
-        if plaintext.len() > 100_000 {
-            return self
-                .fail("policy_denied", &req.commitment_hex, tenant, t0)
+                .fail(reason, &req.commitment_hex, tenant, processor, true, t0)
                 .await;
         }
 
         // ---- upstream model call ----
         // In production: aws-sdk-bedrockruntime via the parent's vsock-egress-proxy.
         // For the v0.1 enclave we sketch a synchronous HTTP call here.
-        let upstream_resp = call_upstream(&plaintext).await?;
-        let result_hash = hex::encode(Sha256::digest(serde_json::to_vec(&upstream_resp)?));
+        let upstream_resp = match call_upstream(&plaintext).await {
+            Ok(response) => response,
+            Err(_) => {
+                drop(plaintext);
+                drop(cipher);
+                drop(aead_key);
+                return self
+                    .fail(
+                        "upstream_failed",
+                        &req.commitment_hex,
+                        tenant,
+                        processor,
+                        true,
+                        t0,
+                    )
+                    .await;
+            }
+        };
+        let result_bytes = serde_json::to_vec(&upstream_resp)?;
+        let result_hash = hex::encode(Sha256::digest(result_bytes));
 
         // ---- zeroize: Zeroizing<...> ensures wipe on drop ----
         drop(plaintext);
+        drop(cipher);
         drop(aead_key);
 
         // ---- sign proof ----
         let counter = self.counter.fetch_add(1, Ordering::SeqCst) + 1;
+        let timestamp = now_secs();
         let stmt = ProofStatement {
             proof_id: random_hex(16),
             proof_version: 3,
@@ -266,9 +443,9 @@ impl EnclaveState {
             session_id: random_hex(16),
             tenant_id: tenant.into(),
             counter,
-            timestamp: now_secs(),
+            timestamp,
             commitment_hex: req.commitment_hex.clone(),
-            processor_id: "gateway".into(),
+            processor_id: processor.into(),
             upstream_model: upstream_resp
                 .get("model")
                 .and_then(|v| v.as_str())
@@ -277,15 +454,31 @@ impl EnclaveState {
             upstream_tokens_out: upstream_resp.get("output_tokens").and_then(|v| v.as_u64()),
             measurement: EXPECTED_PCR0.into(),
             channel_public_key_hex: hex::encode(self.channel_pk.as_bytes()),
+            proof_verifier_key_hex: hex::encode(self.proof_sk.verifying_key().to_bytes()),
             tee_backend: "aws-nitro".into(),
             compute_tier: "tier1_cpu_enclave_only".into(),
             proof_mode: "attestation".into(),
             success: true,
             error_code: None,
-            policy_decision: json!({"allow": true, "policy_hash": "v1", "tenant": tenant}),
-            zeroization_report: json!({"input_buffer_wiped": true, "response_buffer_wiped": true}),
+            policy_decision: json!({
+                "allow": true,
+                "reason": "allowed",
+                "policy_id": self.policy.policy_id,
+                "policy_version": self.policy.policy_version,
+                "policy_hash": self.policy.policy_hash(),
+                "tenant": tenant,
+                "processor": processor,
+            }),
+            zeroization_report: json!({
+                "input_buffer_wiped": true,
+                "response_buffer_wiped": false,
+                "response_buffer_returned": true,
+            }),
             result_hash_hex: Some(result_hash),
-            output_governance: json!({"retention_policy": "ephemeral", "expires_at": now_secs() + 3600}),
+            output_governance: json!({
+                "retention_policy": "returned-only",
+                "expires_at": timestamp,
+            }),
             failure_detail: None,
         };
         let canonical = canonical_json(&stmt)?;
@@ -296,9 +489,8 @@ impl EnclaveState {
             signature_b64: base64::engine::general_purpose::STANDARD.encode(signature),
         };
 
-        // ---- append to ledger ----
-        let leaf = Sha256::digest(serde_json::to_vec(&proof)?);
-        let receipt = self.ledger.lock().await.append(leaf.to_vec(), &proof)?;
+        // ---- append to the RFC 6962 transparency log ----
+        let receipt = self.append_proof(&proof).await?;
 
         let total_us = t0.elapsed().as_micros() as u64;
         Ok(json!({
@@ -315,6 +507,8 @@ impl EnclaveState {
         code: &str,
         commitment: &str,
         tenant: &str,
+        processor: &str,
+        input_wiped: bool,
         t0: std::time::Instant,
     ) -> Result<Value> {
         let counter = self.counter.fetch_add(1, Ordering::SeqCst) + 1;
@@ -327,19 +521,32 @@ impl EnclaveState {
             counter,
             timestamp: now_secs(),
             commitment_hex: commitment.into(),
-            processor_id: "gateway".into(),
+            processor_id: processor.into(),
             upstream_model: None,
             upstream_tokens_in: None,
             upstream_tokens_out: None,
             measurement: EXPECTED_PCR0.into(),
             channel_public_key_hex: hex::encode(self.channel_pk.as_bytes()),
+            proof_verifier_key_hex: hex::encode(self.proof_sk.verifying_key().to_bytes()),
             tee_backend: "aws-nitro".into(),
             compute_tier: "tier1_cpu_enclave_only".into(),
             proof_mode: "attestation".into(),
             success: false,
             error_code: Some(code.into()),
-            policy_decision: json!({"allow": false, "reason": code, "tenant": tenant}),
-            zeroization_report: json!({}),
+            policy_decision: json!({
+                "allow": false,
+                "reason": code,
+                "policy_id": self.policy.policy_id,
+                "policy_version": self.policy.policy_version,
+                "policy_hash": self.policy.policy_hash(),
+                "tenant": tenant,
+                "processor": processor,
+            }),
+            zeroization_report: json!({
+                "input_buffer_wiped": input_wiped,
+                "response_buffer_wiped": false,
+                "response_buffer_returned": false,
+            }),
             result_hash_hex: None,
             output_governance: json!({}),
             failure_detail: Some(json!({"code": code})),
@@ -351,8 +558,7 @@ impl EnclaveState {
             signer_key_id: "enclave-proof-v1".into(),
             signature_b64: base64::engine::general_purpose::STANDARD.encode(signature),
         };
-        let leaf = Sha256::digest(serde_json::to_vec(&proof)?);
-        let receipt = self.ledger.lock().await.append(leaf.to_vec(), &proof)?;
+        let receipt = self.append_proof(&proof).await?;
         Ok(json!({
             "ok": false, "error": code,
             "proof": proof, "receipt": receipt,
@@ -362,78 +568,71 @@ impl EnclaveState {
 
     async fn ledger_root(&self) -> Value {
         let ledger = self.ledger.lock().await;
-        json!({
-            "size": ledger.len(),
-            "root_hex": hex::encode(ledger.root()),
-        })
+        let checkpoint = self.sign_checkpoint(ledger.size(), ledger.root());
+        json!({"checkpoint": checkpoint})
     }
-}
 
-// =================== Merkle log ===================
-
-struct MerkleLog {
-    entries: Vec<Vec<u8>>,
-    tower: Vec<Option<Vec<u8>>>,
-}
-impl MerkleLog {
-    fn new() -> Self {
-        MerkleLog {
-            entries: Vec::new(),
-            tower: Vec::new(),
-        }
-    }
-    fn append(&mut self, leaf: Vec<u8>, _proof: &SignedProof) -> Result<Value> {
-        let idx = self.entries.len();
-        self.entries.push(leaf.clone());
-        self.push_tower(leaf.clone());
-        let root = self.root();
-        Ok(json!({
+    async fn ledger_proof(&self, idx: usize) -> Option<Value> {
+        let ledger = self.ledger.lock().await;
+        let leaf = ledger.leaf_at(idx)?;
+        let path = ledger.inclusion_path(idx)?;
+        let checkpoint = self.sign_checkpoint(ledger.size(), ledger.root());
+        Some(json!({
             "index": idx,
-            "leaf_hex": hex::encode(&leaf),
-            "root_hex": hex::encode(root),
-            "ledger_size": self.entries.len(),
+            "leaf_hash_hex": hex::encode(leaf),
+            "audit_path": encode_hashes(&path),
+            "checkpoint": checkpoint,
         }))
     }
-    fn len(&self) -> usize {
-        self.entries.len()
+
+    async fn ledger_consistency(&self, from_size: usize) -> Option<Value> {
+        let ledger = self.ledger.lock().await;
+        let from_root = ledger.root_at(from_size)?;
+        let path = ledger.consistency_path(from_size)?;
+        let from_checkpoint = self.sign_checkpoint(from_size, from_root);
+        let to_checkpoint = self.sign_checkpoint(ledger.size(), ledger.root());
+        Some(json!({
+            "from_checkpoint": from_checkpoint,
+            "to_checkpoint": to_checkpoint,
+            "consistency_path": encode_hashes(&path),
+        }))
     }
-    fn push_tower(&mut self, leaf: Vec<u8>) {
-        let mut node = leaf;
-        let mut h = 0usize;
-        loop {
-            if h >= self.tower.len() {
-                self.tower.push(Some(node));
-                return;
-            }
-            match self.tower[h].take() {
-                Some(t) => {
-                    let mut hasher = Sha256::new();
-                    hasher.update(&t);
-                    hasher.update(&node);
-                    node = hasher.finalize().to_vec();
-                    h += 1;
-                }
-                None => {
-                    self.tower[h] = Some(node);
-                    return;
-                }
-            }
-        }
+
+    async fn append_proof(&self, proof: &SignedProof) -> Result<Value> {
+        let entry = canonical_json(proof)?;
+        let mut ledger = self.ledger.lock().await;
+        let index = ledger.append(&entry);
+        let leaf = ledger
+            .leaf_at(index)
+            .ok_or_else(|| anyhow::anyhow!("appended leaf missing"))?;
+        let path = ledger
+            .inclusion_path(index)
+            .ok_or_else(|| anyhow::anyhow!("inclusion path missing"))?;
+        let checkpoint = self.sign_checkpoint(ledger.size(), ledger.root());
+        Ok(json!({
+            "index": index,
+            "leaf_hash_hex": hex::encode(leaf),
+            "audit_path": encode_hashes(&path),
+            "checkpoint": checkpoint,
+        }))
     }
-    fn root(&self) -> Vec<u8> {
-        let mut root: Option<Vec<u8>> = None;
-        for n in self.tower.iter().flatten() {
-            root = Some(match root {
-                None => n.clone(),
-                Some(r) => {
-                    let mut h = Sha256::new();
-                    h.update(n);
-                    h.update(&r);
-                    h.finalize().to_vec()
-                }
-            });
+
+    fn sign_checkpoint(&self, size: usize, root: transparency::Hash) -> SignedCheckpoint {
+        let statement = CheckpointStatement {
+            size,
+            root_hex: hex::encode(root),
+            timestamp: now_secs(),
+        };
+        let signature = self
+            .proof_sk
+            .sign(&canonical_json(&statement).expect("checkpoint serialization"));
+        SignedCheckpoint {
+            size: statement.size,
+            root_hex: statement.root_hex,
+            timestamp: statement.timestamp,
+            checkpoint_signature_b64: base64::engine::general_purpose::STANDARD
+                .encode(signature.to_bytes()),
         }
-        root.unwrap_or_else(|| vec![0u8; 32])
     }
 }
 
@@ -486,6 +685,7 @@ struct AttestationOut {
     measurement: String,
     channel_public_key_hex: String,
     proof_verifier_key_hex: String,
+    binding_format: String,
     tee_backend: String,
     compute_tier: String,
     timestamp: u64,
@@ -507,6 +707,7 @@ struct ProofStatement {
     upstream_tokens_out: Option<u64>,
     measurement: String,
     channel_public_key_hex: String,
+    proof_verifier_key_hex: String,
     tee_backend: String,
     compute_tier: String,
     proof_mode: String,
@@ -525,6 +726,21 @@ struct SignedProof {
     signature_b64: String,
 }
 
+#[derive(Serialize)]
+struct CheckpointStatement {
+    size: usize,
+    root_hex: String,
+    timestamp: u64,
+}
+
+#[derive(Serialize)]
+struct SignedCheckpoint {
+    size: usize,
+    root_hex: String,
+    timestamp: u64,
+    checkpoint_signature_b64: String,
+}
+
 // =================== Helpers ===================
 
 fn now_secs() -> u64 {
@@ -538,6 +754,9 @@ fn random_hex(n_bytes: usize) -> String {
     let mut b = vec![0u8; n_bytes];
     OsRng.fill_bytes(&mut b);
     hex::encode(b)
+}
+fn encode_hashes(hashes: &[transparency::Hash]) -> Vec<String> {
+    hashes.iter().map(hex::encode).collect()
 }
 /// Canonical JSON for signing: keys sorted recursively. Mirrors the SDK.
 fn canonical_json<T: serde::Serialize>(v: &T) -> Result<Vec<u8>> {
@@ -598,6 +817,7 @@ mod tests {
             upstream_tokens_out: None,
             measurement: "00".into(),
             channel_public_key_hex: "11".into(),
+            proof_verifier_key_hex: "22".into(),
             tee_backend: "aws-nitro".into(),
             compute_tier: "tier1_cpu_enclave_only".into(),
             proof_mode: "attestation".into(),

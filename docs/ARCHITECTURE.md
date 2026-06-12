@@ -6,7 +6,7 @@ PZDR Gateway is a confidential-computing proxy for AI inference. The parent EC2
 instance accepts HTTPS traffic and forwards framed JSON over vsock into an AWS
 Nitro Enclave. The enclave decrypts the client payload, verifies the plaintext
 commitment, runs policy checks, calls the model path, wipes sensitive buffers,
-signs a deletion proof, and appends the proof hash to a Merkle log.
+signs a deletion proof, and appends the canonical proof to an RFC 6962 log.
 
 ## Components
 
@@ -14,12 +14,12 @@ signs a deletion proof, and appends the proof hash to a Merkle log.
   target connection and forwards requests to the enclave over vsock. It should
   not receive plaintext prompts.
 - `pzdr-enclave`: enclave-side binary. It owns the X25519 channel key, Ed25519
-  proof signing key, policy gate, proof generation, and Merkle append path.
+  proof signing key, hash-pinned policy, proof generation, and transparency log.
 - `nitro-attestation`: parser/generator for AWS Nitro attestation documents.
-  Clients use attestation to bind the channel public key to an expected enclave
-  measurement.
+  Clients validate the AWS certificate path and COSE signature, pin PCR0, and
+  bind both public keys to the enclave measurement.
 - TypeScript SDK: fetches attestation, encrypts requests, submits inference,
-  and verifies returned proof signatures offline.
+  and verifies attestation, proof signatures, signed checkpoints, and inclusion.
 - Marketplace metering helper: prepares parent-side usage events and
   `BatchMeterUsage` payloads after billable success proofs.
 
@@ -33,8 +33,10 @@ signs a deletion proof, and appends the proof hash to a Merkle log.
    `/v1/gateway/inference`.
 5. Enclave decrypts, verifies commitment, evaluates policy, and produces the
    model response.
-6. Enclave zeroizes sensitive buffers, signs a v3 deletion proof, appends the
-   proof hash to the Merkle log, and returns the response, proof, and receipt.
+6. Enclave wipes the input buffer, signs a v3 deletion proof, appends the
+   canonical proof to the log, and returns the response, proof, and receipt.
+   The proof explicitly records that the response was returned and does not
+   falsely claim that output memory was securely wiped before delivery.
 
 ## Deployment Shape
 

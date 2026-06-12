@@ -1,6 +1,6 @@
 [package]
 name = "vsock-parent-proxy"
-version = "0.1.0"
+version = "0.1.6"
 edition = "2021"
 license = "Apache-2.0"
 description = "PZDR Gateway parent-partition HTTP↔vsock proxy. Runs on the EC2 instance, accepts HTTPS from the ALB, forwards into the Nitro Enclave over vsock."

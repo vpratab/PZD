@@ -1,6 +1,6 @@
 [package]
 name = "pzdr-enclave"
-version = "0.1.0"
+version = "0.1.6"
 edition = "2021"
 license = "Apache-2.0"
 description = "PZDR enclave-side binary. Runs INSIDE the Nitro Enclave. Listens on vsock, decrypts channel ciphertext, processes inference, signs deletion proofs, returns receipts."

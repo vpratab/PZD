@@ -81,13 +81,13 @@ try {
 
   $OldErrorActionPreference = $ErrorActionPreference
   $ErrorActionPreference = "Continue"
-  git rev-parse --verify v0.1.0 *> $null
+  git rev-parse --verify v0.1.6 *> $null
   $TagStatus = $LASTEXITCODE
   $ErrorActionPreference = $OldErrorActionPreference
   if ($TagStatus -ne 0) {
-    git tag -a v0.1.0 -m "PZDR Gateway v0.1.0 - initial engineering release"
+    git tag -a v0.1.6 -m "PZDR Gateway v0.1.6 - verifiable transparency release"
   }
-  git push origin v0.1.0
+  git push origin v0.1.6
 } finally {
   Pop-Location
 }

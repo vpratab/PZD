@@ -136,6 +136,10 @@ async fn main() -> Result<()> {
         .route("/v1/gateway/inference", post(forward_inference))
         .route("/v1/ledger/root", get(forward_ledger_root))
         .route("/v1/ledger/proof/:idx", get(forward_path))
+        .route(
+            "/v1/ledger/consistency/:from_size",
+            get(forward_consistency),
+        )
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(&args.listen)
@@ -225,6 +229,22 @@ async fn forward_path(
         state,
         "GET".into(),
         format!("/v1/ledger/proof/{idx}"),
+        headers,
+        body,
+    )
+    .await
+}
+
+async fn forward_consistency(
+    State(state): State<AppState>,
+    Path(from_size): Path<u64>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Response, AppError> {
+    do_forward(
+        state,
+        "GET".into(),
+        format!("/v1/ledger/consistency/{from_size}"),
         headers,
         body,
     )

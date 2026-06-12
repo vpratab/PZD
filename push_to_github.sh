@@ -91,17 +91,17 @@ else
   git push -u origin main
 fi
 
-if git rev-parse --verify v0.1.0 >/dev/null 2>&1; then
-  echo "Tag v0.1.0 already exists; leaving it unchanged."
+if git rev-parse --verify v0.1.6 >/dev/null 2>&1; then
+  echo "Tag v0.1.6 already exists; leaving it unchanged."
 else
-  git tag -a v0.1.0 -m "PZDR Gateway v0.1.0 - initial engineering release"
-  git push origin v0.1.0
+  git tag -a v0.1.6 -m "PZDR Gateway v0.1.6 - verifiable transparency release"
+  git push origin v0.1.6
 fi
 
 cat <<EOF
 
 Pushed to: https://github.com/$REPO
-Release:  https://github.com/$REPO/releases/tag/v0.1.0
+Release:  https://github.com/$REPO/releases/tag/v0.1.6
 
 Next steps:
   - Add repo topics: confidential-computing, attestation, aws-nitro, ai-inference

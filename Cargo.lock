@@ -961,7 +961,7 @@ checksum = "616ec5685824bcc94416c6d4a7a446eea774a31efd7062c8480ba6fd06d7a6e5"
 
 [[package]]
 name = "marketplace-metering"
-version = "0.1.0"
+version = "0.1.6"
 dependencies = [
  "hex",
  "serde",
@@ -1028,7 +1028,7 @@ dependencies = [
 
 [[package]]
 name = "nitro-attestation"
-version = "0.1.0"
+version = "0.1.6"
 dependencies = [
  "aws-nitro-enclaves-nsm-api",
  "base64",
@@ -1242,7 +1242,7 @@ checksum = "106dd99e98437432fed6519dedecfade6a06a73bb7b2a1e019fdd2bee5778d94"
 
 [[package]]
 name = "pzdr-enclave"
-version = "0.1.0"
+version = "0.1.6"
 dependencies = [
  "anyhow",
  "base64",
@@ -1860,7 +1860,7 @@ dependencies = [
 
 [[package]]
 name = "vsock-parent-proxy"
-version = "0.1.0"
+version = "0.1.6"
 dependencies = [
  "anyhow",
  "axum",

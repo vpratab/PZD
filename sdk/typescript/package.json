@@ -1,6 +1,6 @@
 {
   "name": "@pzdr/gateway-client",
-  "version": "0.1.0",
+  "version": "0.1.6",
   "description": "TypeScript SDK for PZDR Gateway - Provable Zero Data Retention for AI inference",
   "license": "Apache-2.0",
   "author": "AssureZero LLC",
@@ -12,7 +12,7 @@
   ],
   "scripts": {
     "build": "tsc",
-    "test": "node --test client.test.mjs",
+    "test": "node --test",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
@@ -30,6 +30,7 @@
     "verifiable-deletion"
   ],
   "dependencies": {
+    "cbor": "^9.0.2",
     "libsodium-wrappers": "^0.7.13"
   },
   "devDependencies": {

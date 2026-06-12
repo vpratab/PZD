@@ -41,6 +41,7 @@ try {
     "sdk\typescript\node_modules\",
     "sdk\typescript\dist\",
     "aws\terraform\.terraform\",
+    "tools\__pycache__\",
     ".git\"
   )
 
@@ -53,6 +54,9 @@ try {
         $skip = $true
         break
       }
+    }
+    if ($rel -match '(^|\\)__pycache__(\\|$)' -or $rel -match '\.pyc$') {
+      $skip = $true
     }
     -not $skip
   }
@@ -73,7 +77,10 @@ try {
 
 $archive = [System.IO.Compression.ZipFile]::OpenRead($Out)
 try {
-  $bad = $archive.Entries | Where-Object { $_.FullName -match '(^|/)(target|node_modules|dist|\.terraform|\.git)(/|$)' }
+    $bad = $archive.Entries | Where-Object {
+      $_.FullName -match '(^|/)(target|node_modules|dist|\.terraform|\.git|__pycache__)(/|$)' -or
+      $_.FullName -match '\.pyc$'
+    }
   if ($bad) {
     throw "Generated artifacts leaked into zip: $($bad[0].FullName)"
   }

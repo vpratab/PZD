@@ -6,7 +6,7 @@ info:
     API that processes requests inside an attested ephemeral compute boundary and returns
     the model response together with a cryptographically signed deletion receipt anchored
     on an append-only Merkle ledger.
-  version: 0.1.0
+  version: 0.1.6
   contact:
     name: AssureZero LLC
     email: support@assurezero.com
@@ -45,9 +45,9 @@ paths:
     get:
       summary: Fetch the enclave attestation document
       description: |
-        Returns the enclave's published code measurement, channel public key, and
-        proof verifier key. Clients use this to (a) bind their encrypted payload
-        to the enclave's attested channel and (b) verify signed proofs offline.
+        Returns the raw AWS Nitro attestation document plus decoded convenience
+        fields. Clients must validate the COSE signature and AWS certificate path,
+        pin PCR0, and confirm that signed user_data binds both public keys.
       security: []
       responses:
         '200':
@@ -103,8 +103,8 @@ paths:
               schema:
                 type: object
                 properties:
-                  size: { type: integer }
-                  root_hex: { type: string }
+                  checkpoint:
+                    $ref: '#/components/schemas/SignedCheckpoint'
 
   /v1/ledger/proof/{idx}:
     get:
@@ -123,9 +123,35 @@ paths:
                 type: object
                 properties:
                   index: { type: integer }
-                  leaf_hex: { type: string }
-                  path: { type: array, items: { type: string } }
-                  root_hex: { type: string }
+                  leaf_hash_hex: { type: string }
+                  audit_path: { type: array, items: { type: string } }
+                  checkpoint:
+                    $ref: '#/components/schemas/SignedCheckpoint'
+
+  /v1/ledger/consistency/{from_size}:
+    get:
+      summary: Prove the ledger grew append-only from an earlier tree size
+      parameters:
+        - in: path
+          name: from_size
+          required: true
+          schema: { type: integer, minimum: 0 }
+      responses:
+        '200':
+          description: RFC 6962 consistency proof
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [from_checkpoint, to_checkpoint, consistency_path]
+                properties:
+                  from_checkpoint:
+                    $ref: '#/components/schemas/SignedCheckpoint'
+                  to_checkpoint:
+                    $ref: '#/components/schemas/SignedCheckpoint'
+                  consistency_path:
+                    type: array
+                    items: { type: string }
 
 components:
   securitySchemes:
@@ -137,7 +163,7 @@ components:
   schemas:
     AttestationDocument:
       type: object
-      required: [nitro_attestation_b64, measurement, channel_public_key_hex, proof_verifier_key_hex, tee_backend]
+      required: [nitro_attestation_b64, measurement, channel_public_key_hex, proof_verifier_key_hex, binding_format, tee_backend]
       properties:
         nitro_attestation_b64:
           type: string
@@ -151,6 +177,10 @@ components:
         proof_verifier_key_hex:
           type: string
           description: Ed25519 verifier key for signed proofs. Hex-encoded.
+        binding_format:
+          type: string
+          enum: [pzdr-attestation-binding/v1]
+          description: Format of the signed key-binding object in Nitro user_data.
         tee_backend:
           type: string
           enum: [aws-nitro, amd-sev-snp, intel-tdx, mock_nitro_python]
@@ -204,12 +234,7 @@ components:
         proof:
           $ref: '#/components/schemas/SignedDeletionProof'
         receipt:
-          type: object
-          properties:
-            index: { type: integer }
-            leaf_hex: { type: string }
-            root_hex: { type: string }
-            ledger_size: { type: integer }
+          $ref: '#/components/schemas/TransparencyReceipt'
         timings_us:
           type: object
           additionalProperties: { type: integer }
@@ -227,7 +252,7 @@ components:
 
     DeletionProofStatement:
       type: object
-      required: [proof_id, proof_version, session_id, counter, timestamp, commitment_hex, measurement, success]
+      required: [proof_id, proof_version, session_id, counter, timestamp, commitment_hex, measurement, channel_public_key_hex, proof_verifier_key_hex, success]
       properties:
         proof_id: { type: string }
         proof_version: { type: integer, enum: [3] }
@@ -236,7 +261,7 @@ components:
         tenant_id: { type: string }
         counter:
           type: integer
-          description: Monotonic counter for anti-rollback.
+          description: Monotonic within one enclave-key epoch; external checkpoint witnessing detects cross-restart rollback.
         timestamp:
           type: integer
           description: Integer Unix seconds. Kept integral for cross-language proof canonicalization.
@@ -247,6 +272,7 @@ components:
         upstream_tokens_out: { type: integer }
         measurement: { type: string }
         channel_public_key_hex: { type: string }
+        proof_verifier_key_hex: { type: string }
         tee_backend: { type: string }
         compute_tier: { type: string }
         proof_mode:
@@ -266,6 +292,7 @@ components:
           properties:
             input_buffer_wiped: { type: boolean }
             response_buffer_wiped: { type: boolean }
+            response_buffer_returned: { type: boolean }
         result_hash_hex: { type: string }
         output_governance:
           type: object
@@ -273,4 +300,31 @@ components:
             retention_policy:
               type: string
               enum: [ephemeral, retained-encrypted, returned-only]
-            expires_at: { type: number }
+            expires_at: { type: integer }
+
+    SignedCheckpoint:
+      type: object
+      required: [size, root_hex, timestamp, checkpoint_signature_b64]
+      properties:
+        size: { type: integer, minimum: 0 }
+        root_hex:
+          type: string
+          description: RFC 6962 Merkle tree root.
+        timestamp:
+          type: integer
+          description: Integer Unix seconds.
+        checkpoint_signature_b64:
+          type: string
+          description: Ed25519 signature over canonical JSON of size, root_hex, and timestamp.
+
+    TransparencyReceipt:
+      type: object
+      required: [index, leaf_hash_hex, audit_path, checkpoint]
+      properties:
+        index: { type: integer, minimum: 0 }
+        leaf_hash_hex: { type: string }
+        audit_path:
+          type: array
+          items: { type: string }
+        checkpoint:
+          $ref: '#/components/schemas/SignedCheckpoint'

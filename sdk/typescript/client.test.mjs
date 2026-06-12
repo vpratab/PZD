@@ -57,12 +57,12 @@ const proof = {
 };
 
 test("verifyProof accepts a deterministic signed v3 proof fixture", async () => {
-  const client = new PZDRClient({ url: "http://127.0.0.1:8090" });
+  const client = new PZDRClient({ url: "http://127.0.0.1:8090", expectedPcr0: "00" });
   assert.equal(await client.verifyProof(proof, verifierKeyHex), true);
 });
 
 test("verifyProof rejects a tampered deterministic proof fixture", async () => {
-  const client = new PZDRClient({ url: "http://127.0.0.1:8090" });
+  const client = new PZDRClient({ url: "http://127.0.0.1:8090", expectedPcr0: "00" });
   const tampered = {
     ...proof,
     statement: {

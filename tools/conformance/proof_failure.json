@@ -1,0 +1,45 @@
+{
+  "statement": {
+    "proof_id": "000000000000000000000001daa66d13",
+    "proof_version": 3,
+    "schema_url": "pzdr://proof/v3",
+    "session_id": "000000000001daa5",
+    "tenant_id": "combat-sys-1",
+    "counter": 3,
+    "timestamp": 1780000003,
+    "commitment_hex": "6e47572bb3e3c7efc7d28c3b19053de0e73ea631ba94dc8d344b7eff88767bea",
+    "processor_id": "gateway",
+    "upstream_model": null,
+    "upstream_tokens_in": null,
+    "upstream_tokens_out": null,
+    "measurement": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+    "channel_public_key_hex": "68267ad98b12e1f55de5940e752e1ba41a216e7659f5fe8827822ff56d884401",
+    "proof_verifier_key_hex": "69188d2e19cd90d0e452c5b691030a18df1315d3ae50d01ff7ef7c44944fccaa",
+    "tee_backend": "aws-nitro",
+    "compute_tier": "tier1_cpu_enclave_only",
+    "proof_mode": "attestation",
+    "success": false,
+    "error_code": "policy_denied",
+    "policy_decision": {
+      "allow": false,
+      "reason": "policy_denied",
+      "policy_id": "pzdr-default",
+      "policy_version": 1,
+      "policy_hash": "96b9a9b4df3d1538f068d2b87b8c5952b78da9e39e2c23d28ee71feb025ade48",
+      "tenant": "combat-sys-1",
+      "processor": "gateway"
+    },
+    "zeroization_report": {
+      "input_buffer_wiped": true,
+      "response_buffer_wiped": false,
+      "response_buffer_returned": false
+    },
+    "result_hash_hex": null,
+    "output_governance": {},
+    "failure_detail": {
+      "code": "policy_denied"
+    }
+  },
+  "signer_key_id": "enclave-proof-v1",
+  "signature_b64": "oBkDrLo1pCk5gWDogmLsuJlWYXm2D9sY9guQkCnTQxPLOMtkSlVYplYd9cptdj6bM+xm5xCLN2QvSbz7GHZ+Cw=="
+}

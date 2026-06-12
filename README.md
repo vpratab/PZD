@@ -12,8 +12,8 @@ returns a Merkle receipt.
 - `crates/nitro-attestation`: AWS Nitro attestation parsing and enclave NSM
   attestation generation support.
 - `crates/vsock-parent-proxy`: parent-partition HTTP to vsock proxy.
-- `services/pzdr-enclave`: enclave-side request handler, channel decryption,
-  policy gate, mock upstream response, proof signing, and Merkle append.
+- `services/pzdr-enclave`: enclave-side request handler, hash-pinned policy,
+  mock upstream response, proof signing, and RFC 6962 transparency log.
 - `sdk/typescript`: TypeScript client for attestation, encryption, inference,
   and offline proof verification.
 - `crates/marketplace-metering`: helpers for AWS Marketplace usage events and
@@ -33,7 +33,8 @@ Working locally:
 - Rust compile checks for the Nitro attestation crate.
 - Linux-target compile checks for the parent vsock proxy.
 - Linux-target compile checks for the enclave binary.
-- TypeScript SDK build.
+- TypeScript SDK build, raw Nitro verification, and signed-receipt verification.
+- Cross-language proof, checkpoint, inclusion, consistency, and policy tests.
 - Docker Compose syntax validation.
 - Terraform format and validation for the starter AWS stack.
 
@@ -90,6 +91,7 @@ The v0.1 Nitro gateway exposes:
 - `POST /v1/gateway/inference`
 - `GET /v1/ledger/root`
 - `GET /v1/ledger/proof/{idx}`
+- `GET /v1/ledger/consistency/{from_size}`
 
 See `docs/openapi.yaml` for request and response schemas.
 

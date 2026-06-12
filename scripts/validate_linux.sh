@@ -70,6 +70,13 @@ else
   echo "WARNING: native Linux npm is unavailable; run scripts/validate_release.ps1 on Windows for the TypeScript SDK." >&2
 fi
 
+step "Cross-language provability"
+python3 -c "import cryptography" || {
+  echo "missing Python dependencies; run: python3 -m pip install -r tools/requirements.txt" >&2
+  exit 127
+}
+bash tools/run_all.sh
+
 step "Structured docs"
 python3 - <<'PY'
 import json

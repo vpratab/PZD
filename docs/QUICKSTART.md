@@ -26,14 +26,17 @@ npm install @pzdr/gateway-client
 ```typescript
 import { PZDRClient } from "@pzdr/gateway-client";
 
-const client = new PZDRClient({ url: "http://localhost:8090" });
+const client = new PZDRClient({
+  url: "http://localhost:8090",
+  expectedPcr0: process.env.PZDR_EXPECTED_PCR0!,
+});
 
 const attestation = await client.getAttestation();
 console.log("Enclave measurement:", attestation.measurement);
 
 const result = await client.process({
   prompt: "Summarize this clinical encounter: ...",
-  processor: "patient_aggregate",
+  processor: "gateway",
   tenant: "clinic-test-01",
 });
 
@@ -46,12 +49,19 @@ const valid = await client.verifyProof(
   attestation.proof_verifier_key_hex,
 );
 console.log("Proof verifies?", valid);
+
+const receiptValid = await client.verifyReceipt(
+  result.proof,
+  result.receipt,
+  attestation.proof_verifier_key_hex,
+);
+console.log("Signed checkpoint and inclusion verify?", receiptValid);
 ```
 
 ## Production Nitro Bring-Up
 
 ```bash
-PZDR_VERSION="${PZDR_VERSION:-$(git describe --tags --abbrev=0 2>/dev/null || echo v0.1.0)}"
+PZDR_VERSION="${PZDR_VERSION:-$(git describe --tags --abbrev=0 2>/dev/null || echo v0.1.6)}"
 (cd eif && PZDR_VERSION="$PZDR_VERSION" ./build-eif.sh)
 ```
 

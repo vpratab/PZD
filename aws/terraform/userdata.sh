@@ -25,7 +25,7 @@ ENCLAVE_CID=16
 ENCLAVE_PORT=5000
 ENCLAVE_TIMEOUT_MS=30000
 RUST_LOG=info
-PZDR_EIF_PATH=/opt/pzdr/eif/pzdr-enclave-v0.1.0.eif
+PZDR_EIF_PATH=/opt/pzdr/eif/pzdr-enclave-v0.1.6.eif
 PZDR_ENCLAVE_MEMORY_MIB=${enclave_memory}
 PZDR_ENCLAVE_CPU_COUNT=${enclave_cpu}
 PZDR_EXPECTED_PCR0=${measurement}
@@ -37,7 +37,7 @@ cat >/etc/motd <<'EOF'
 PZDR Nitro parent host is bootstrapped.
 
 Next:
-  1. Copy signed EIF to /opt/pzdr/eif/pzdr-enclave-v0.1.0.eif
+  1. Copy signed EIF to /opt/pzdr/eif/pzdr-enclave-v0.1.6.eif
   2. Copy vsock-parent-proxy to /usr/local/bin/vsock-parent-proxy
   3. Install systemd units from ops/systemd/
   4. Start pzdr-enclave.service and vsock-parent-proxy.service

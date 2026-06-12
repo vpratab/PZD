@@ -7,15 +7,29 @@
  */
 
 import { canonicalJSON } from "./canonical.js";
+import {
+  AWS_NITRO_ROOT_PEM_COMMERCIAL,
+  verifyNitroAttestation,
+} from "./attestation.js";
 import sodium from "./sodium.js";
+import {
+  entryBytesOf,
+  leafHash,
+  SignedCheckpoint,
+  verifyCheckpoint,
+  verifyInclusion,
+} from "./transparency.js";
 
 export { canonicalJSON } from "./canonical.js";
+export * from "./attestation.js";
+export * from "./transparency.js";
 
 export interface AttestationDocument {
   nitro_attestation_b64: string;
   measurement: string;
   channel_public_key_hex: string;
   proof_verifier_key_hex: string;
+  binding_format?: string;
   tee_backend: string;
   compute_tier: string;
   timestamp: number;
@@ -37,6 +51,7 @@ export interface DeletionProofStatement {
   upstream_tokens_out?: number;
   measurement: string;
   channel_public_key_hex?: string;
+  proof_verifier_key_hex?: string;
   tee_backend?: string;
   compute_tier?: string;
   proof_mode?: string;
@@ -62,17 +77,20 @@ export interface InferenceResult {
   proof: SignedDeletionProof;
   receipt: {
     index: number;
-    leaf_hex: string;
-    root_hex: string;
-    ledger_size: number;
+    leaf_hash_hex: string;
+    audit_path: string[];
+    checkpoint: SignedCheckpoint;
   };
   timings_us: Record<string, number>;
 }
 
 export interface PZDRClientConfig {
   url: string;
+  expectedPcr0: string;
   apiKey?: string;
   fetch?: typeof fetch;
+  awsNitroRootPem?: string;
+  maxAttestationAgeSeconds?: number;
 }
 
 export interface ProcessOptions {
@@ -108,12 +126,23 @@ export class PZDRClient {
   }
 
   async getAttestation(): Promise<AttestationDocument> {
-    return this.req("/v1/attestation") as Promise<AttestationDocument>;
+    const attestation = await this.req("/v1/attestation") as AttestationDocument;
+    this.verifyAttestation(attestation);
+    return attestation;
+  }
+
+  verifyAttestation(attestation: AttestationDocument): void {
+    verifyNitroAttestation(attestation, {
+      expectedPcr0: this.cfg.expectedPcr0,
+      awsRootPem: this.cfg.awsNitroRootPem ?? AWS_NITRO_ROOT_PEM_COMMERCIAL,
+      maxAgeSeconds: this.cfg.maxAttestationAgeSeconds,
+    });
   }
 
   async process(options: ProcessOptions): Promise<InferenceResult> {
     await sodium.ready;
     const attestation = options.attestation ?? (await this.getAttestation());
+    this.verifyAttestation(attestation);
     const payload = typeof options.prompt === "string"
       ? new TextEncoder().encode(options.prompt)
       : options.prompt;
@@ -191,6 +220,24 @@ export class PZDRClient {
       b64ToBytes(proof.signature_b64),
       message,
       sodium.from_hex(verifierKeyHex),
+    );
+  }
+
+  async verifyReceipt(
+    proof: SignedDeletionProof,
+    receipt: InferenceResult["receipt"],
+    verifierKeyHex: string,
+  ): Promise<boolean> {
+    if (!await this.verifyProof(proof, verifierKeyHex)) return false;
+    if (!await verifyCheckpoint(receipt.checkpoint, verifierKeyHex)) return false;
+    const leaf = leafHash(entryBytesOf(proof));
+    if (sodium.to_hex(leaf) !== receipt.leaf_hash_hex.toLowerCase()) return false;
+    return verifyInclusion(
+      leaf,
+      receipt.index,
+      receipt.checkpoint.size,
+      receipt.audit_path,
+      receipt.checkpoint.root_hex,
     );
   }
 }

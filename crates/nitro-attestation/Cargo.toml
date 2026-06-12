@@ -1,6 +1,6 @@
 [package]
 name = "nitro-attestation"
-version = "0.1.0"
+version = "0.1.6"
 edition = "2021"
 license = "Apache-2.0"
 description = "AWS Nitro Enclave attestation document parsing + verification (COSE/CBOR over the NSM device)"
@@ -35,3 +35,6 @@ aws-nitro-enclaves-nsm-api = { version = "0.4", optional = true }
 
 [dev-dependencies]
 hex-literal = "0.4"
+ciborium = "0.2"
+coset = "0.3"
+hex = "0.4"

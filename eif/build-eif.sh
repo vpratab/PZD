@@ -12,7 +12,7 @@ mkdir -p "$OUT"
 if [ -z "${PZDR_VERSION:-}" ]; then
   PZDR_VERSION="$(git -C "$ROOT" describe --tags --exact-match 2>/dev/null \
     || git -C "$ROOT" describe --tags --abbrev=0 2>/dev/null \
-    || echo v0.1.0)"
+    || echo v0.1.6)"
 fi
 COSIGN_KEY="${COSIGN_KEY:-$ROOT/eif/signing-key.pem}"
 IMAGE_TAG="pzdr/enclave:${PZDR_VERSION}"

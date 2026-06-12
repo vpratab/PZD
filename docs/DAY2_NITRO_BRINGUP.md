@@ -43,7 +43,7 @@ sudo install -m 0755 target/release/vsock-parent-proxy /usr/local/bin/vsock-pare
 ## Build EIF
 
 ```bash
-PZDR_VERSION="${PZDR_VERSION:-$(git describe --tags --abbrev=0 2>/dev/null || echo v0.1.0)}"
+PZDR_VERSION="${PZDR_VERSION:-$(git describe --tags --abbrev=0 2>/dev/null || echo v0.1.6)}"
 (cd eif && PZDR_VERSION="$PZDR_VERSION" ./build-eif.sh)
 ```
 
@@ -96,7 +96,8 @@ Expected result:
 - `ok: true`
 - `proof_valid: true`
 - `measurement` matches `PZDR_EXPECTED_PCR0`
-- receipt contains `leaf_hex`, `root_hex`, and `ledger_size`
+- receipt contains `leaf_hash_hex`, an RFC 6962 `audit_path`, and a signed `checkpoint`
+- the SDK reports both `proof_valid: true` and `receipt_valid: true`
 
 ## Evidence
 

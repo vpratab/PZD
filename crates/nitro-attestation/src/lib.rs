@@ -213,6 +213,27 @@ impl Verifier {
         })
     }
 
+    /// One-call client API: parse the document, verify COSE signature and
+    /// certificate chain against the supplied AWS root, check freshness, and
+    /// (optionally) pin PCR0. This is the function the vsock parent proxy and
+    /// SDK should call; the granular functions remain public for callers that
+    /// need custom policy.
+    pub fn parse_and_verify(
+        doc_bytes: &[u8],
+        aws_root_pem: &[u8],
+        now_ms: i64,
+        max_skew_secs: i64,
+        expected_pcr0_hex: Option<&str>,
+    ) -> Result<VerifiedAttestation, NitroError> {
+        let parsed = Self::parse(doc_bytes)?;
+        Self::verify_signature(doc_bytes, &parsed, aws_root_pem)?;
+        parsed.assert_fresh(now_ms, max_skew_secs)?;
+        if let Some(pcr0) = expected_pcr0_hex {
+            parsed.assert_measurement_matches(pcr0)?;
+        }
+        Ok(parsed)
+    }
+
     /// Re-derive the COSE_Sign1 signing input and verify the signature against
     /// the leaf certificate. Then chain-validate the leaf up to a pinned AWS
     /// Nitro root certificate. Returns `Ok(())` only if both pass.
@@ -298,6 +319,10 @@ impl Verifier {
                     cert.tbs_certificate.issuer, issuer.tbs_certificate.subject
                 )));
             }
+            // Path-validation hardening: anything that *issues* a certificate
+            // in this chain must itself be a CA (BasicConstraints cA=TRUE).
+            // Prevents a leaf-only compromise from minting fake "enclaves".
+            Self::assert_ca_constraints(issuer, idx, &format!("issuer of chain cert {idx}"))?;
             Self::verify_cert_signature(cert, issuer, &format!("chain cert {idx}"))?;
         }
         Self::verify_cert_validity(&root, now, "pinned AWS root")?;
@@ -307,6 +332,62 @@ impl Verifier {
         // general WebPKI path builder because Nitro documents carry their own
         // AWS-rooted certificate bundle.
         Ok(())
+    }
+
+    /// BasicConstraints check: a certificate acting as an issuer in the
+    /// validation path must carry `cA = TRUE`. (OID 2.5.29.19)
+    fn assert_ca_constraints(
+        cert: &x509_cert::Certificate,
+        subordinate_ca_count: usize,
+        label: &str,
+    ) -> Result<(), NitroError> {
+        use x509_cert::der::Decode;
+        const BASIC_CONSTRAINTS: x509_cert::der::asn1::ObjectIdentifier =
+            x509_cert::der::asn1::ObjectIdentifier::new_unwrap("2.5.29.19");
+        const KEY_USAGE: x509_cert::der::asn1::ObjectIdentifier =
+            x509_cert::der::asn1::ObjectIdentifier::new_unwrap("2.5.29.15");
+        let exts = cert.tbs_certificate.extensions.as_ref().ok_or_else(|| {
+            NitroError::CertChain(format!("{label}: no extensions, cannot be a CA"))
+        })?;
+        let mut basic_constraints_valid = false;
+        for ext in exts.iter() {
+            if ext.extn_id == BASIC_CONSTRAINTS {
+                let bc =
+                    x509_cert::ext::pkix::BasicConstraints::from_der(ext.extn_value.as_bytes())
+                        .map_err(|e| {
+                            NitroError::CertChain(format!("{label}: bad BasicConstraints: {e:?}"))
+                        })?;
+                if !bc.ca {
+                    return Err(NitroError::CertChain(format!(
+                        "{label}: BasicConstraints present but cA=FALSE"
+                    )));
+                }
+                if bc
+                    .path_len_constraint
+                    .is_some_and(|limit| subordinate_ca_count > usize::from(limit))
+                {
+                    return Err(NitroError::CertChain(format!(
+                        "{label}: pathLenConstraint exceeded"
+                    )));
+                }
+                basic_constraints_valid = true;
+            }
+            if ext.extn_id == KEY_USAGE {
+                let usage = x509_cert::ext::pkix::KeyUsage::from_der(ext.extn_value.as_bytes())
+                    .map_err(|e| NitroError::CertChain(format!("{label}: bad KeyUsage: {e:?}")))?;
+                if !usage.key_cert_sign() {
+                    return Err(NitroError::CertChain(format!(
+                        "{label}: KeyUsage does not permit certificate signing"
+                    )));
+                }
+            }
+        }
+        if basic_constraints_valid {
+            return Ok(());
+        }
+        Err(NitroError::CertChain(format!(
+            "{label}: BasicConstraints extension missing — not a CA"
+        )))
     }
 
     fn verify_cert_validity(
@@ -370,6 +451,19 @@ impl Verifier {
     fn verify_cose_signature(cose: &coset::CoseSign1, leaf_der: &[u8]) -> Result<(), NitroError> {
         use p384::ecdsa::{signature::Verifier as _, Signature, VerifyingKey};
         use x509_cert::der::Decode;
+
+        // Algorithm-confusion hardening: the protected header MUST declare
+        // ES384 (COSE alg -35). Nitro always signs with ECDSA P-384/SHA-384;
+        // any other declared algorithm is an attack or corruption, and we
+        // refuse before touching key material.
+        match &cose.protected.header.alg {
+            Some(coset::RegisteredLabelWithPrivate::Assigned(coset::iana::Algorithm::ES384)) => {}
+            other => {
+                return Err(NitroError::Cose(format!(
+                    "protected header alg must be ES384, got {other:?}"
+                )))
+            }
+        }
 
         let cert = x509_cert::Certificate::from_der(leaf_der)
             .map_err(|e| NitroError::CertChain(format!("leaf: {e:?}")))?;
